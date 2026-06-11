@@ -576,38 +576,16 @@
 
             // ==================== 清洗规则 ====================
             const GREETING_PREFIXES = [
-                /^好的[，,]\s*/,
-                /^没问题[，,]\s*/,
-                /^当然可以[，,]\s*/,
-                /^很高兴[为能].*?[，,]\s*/,
-                /^作为一名AI[^，,。]*[，,]\s*/,
-                /^作为DeepSeek[^，,。]*[，,]\s*/,
-                /^我是DeepSeek[^，,。]*[，,]\s*/,
-                /^我是人工智能[^，,。]*[，,]\s*/,
-                /^您好[！!]\s*/,
-                /^你好[！!]\s*/,
-                /^嗨[！!，,]\s*/,
-                /^当然[！!，,]\s*/i,
-                /^Sure[!,]?\s*/i,
-                /^Of course[!,]?\s*/i,
-                /^Great question[!,]?\s*/i,
-                /^I'd be happy to\s*/i,
-                /^Let me\s*/i,
+                /^好的[，,]\\s*/,
+                /^没问题[，,]\\s*/,
+                /^当然可以[，,]\\s*/,
+                /^很高兴[为能].*?[，,]\\s*/,
             ];
 
             const GREETING_SUFFIXES = [
-                /[，,]\s*还有什么[可以需要].*?[？?]?\s*$/,
-                /[，,]\s*有什么[问题需要].*?[？?]?\s*$/,
-                /[，,]\s*希望这[对能].*?[。.]?\s*$/,
-                /[，,]\s*如果您[还有需要].*?[。.]?\s*$/,
-                /[，,]\s*随时[告诉联系].*?[。.]?\s*$/,
-                /[，,]\s*欢迎[继续随时].*?[。.]?\s*$/,
-                /[，,]\s*请[随时告诉].*?[。.]?\s*$/,
-                /[，,]\s*祝[您你].*?[！!。.]?\s*$/,
-                /[，,]\s*以上[仅供].*?[。.]?\s*$/,
-                /\s*Hope this helps[.!]?\s*$/i,
-                /\s*Let me know if.*$/i,
-                /\s*Feel free to.*$/i,
+                /[，,]\\s*还有什么[可以需要].*?[？?]?\\s*$/,
+                /[，,]\\s*有什么[问题需要].*?[？?]?\\s*$/,
+                /[，,]\\s*希望这[对能].*?[。.]?\\s*$/,
             ];
 
             function cleanAIResponse(text) {
@@ -789,21 +767,40 @@
                     const node = mapping[currentId];
                     if (!node) break;
 
-                    // 提取消息内容
+                    // 提取消息内容 — 遍历所有 fragments（DeepSeek 将 THINK 和 RESPONSE 分为独立 fragment）
                     if (node.message && node.message.fragments && node.message.fragments.length > 0) {
-                        const fragment = node.message.fragments[0];
-                        const msgType = fragment.type || '';
-                        // 尝试多种字段获取内容
-                        let content = fragment.content || fragment.text || fragment.value || '';
-                        if (!content && typeof fragment === 'string') content = fragment;
-
-                        if (content && typeof content === 'string' && content.trim()) {
-                            const role = (msgType === 'REQUEST') ? 'user' : 'assistant';
+                        let thinking = '';
+                        let answer = '';
+                        let role = 'assistant';
+                        
+                        for (const frag of node.message.fragments) {
+                            const fragType = (frag.type || '').toUpperCase();
+                            const fragContent = (frag.content || frag.text || '').trim();
+                            if (!fragContent) continue;
+                            
+                            if (fragType === 'REQUEST') {
+                                role = 'user';
+                                // 用户消息：收集所有 REQUEST fragment 内容
+                                if (!answer) answer = fragContent;
+                                else answer += '\n' + fragContent;
+                            } else if (fragType === 'THINK') {
+                                // 思维链：单独存储
+                                thinking = (thinking ? thinking + '\n' : '') + fragContent;
+                            } else if (fragType === 'RESPONSE') {
+                                // AI 回复
+                                if (!answer) answer = fragContent;
+                                else answer += '\n' + fragContent;
+                            }
+                            // SEARCH 类型忽略
+                        }
+                        
+                        if (answer && role) {
                             messages.push({
                                 role,
-                                content: content.trim(),
-                                type: msgType,
-                                rawContent: content.trim(),
+                                content: answer,
+                                thinking,
+                                type: role === 'user' ? 'REQUEST' : 'RESPONSE',
+                                rawContent: answer,
                             });
                         }
                     }
@@ -896,7 +893,7 @@
                             for (const msg of rawMessages) {
                                 const isUser = msg.role === 'user';
                                 let cleanedContent = msg.content;
-                                let thinking = '';
+                                let thinking = msg.thinking || '';
                                 let answer = msg.content;
 
                                 if (isUser) {
@@ -911,20 +908,21 @@
                                         type: msg.type,
                                     });
                                 } else {
-                                    // AI回答
+                                    // AI回答：thinking 已在 parseMapping 中分离
                                     if (optClean.checked) {
-                                        cleanedContent = cleanAIResponse(msg.content);
+                                        // 只清洗回答部分，不碰思维链
+                                        answer = cleanAIResponse(msg.content);
                                     }
-                                    if (optThink.checked) {
-                                        const separated = separateThinking(cleanedContent);
-                                        thinking = separated.thinking;
-                                        answer = separated.answer;
-                                    } else {
-                                        answer = cleanedContent;
+                                    if (optThink.checked && thinking) {
+                                        // 思维链已分离，直接使用
+                                    } else if (!optThink.checked) {
+                                        // 用户不需要分离思维链，合并到 answer
+                                        answer = thinking ? (thinking + '\n\n' + msg.content) : msg.content;
+                                        thinking = '';
                                     }
                                     processedMessages.push({
                                         role: 'assistant',
-                                        content: cleanedContent,
+                                        content: msg.content,
                                         thinking: thinking,
                                         answer: answer,
                                         type: msg.type,
