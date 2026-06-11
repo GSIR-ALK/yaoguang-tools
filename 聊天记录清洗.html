@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek 聊天记录清洗与导出工具</title>
+    <style>
+        :root {
+            --bg: #f5f6f8;
+            --card-bg: #ffffff;
+            --text: #1a1a2e;
+            --text-secondary: #5a5d6e;
+            --border: #e2e5ea;
+            --accent: #4f6ef7;
+            --accent-hover: #3b54d4;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --tag-bg: #eef2ff;
+            --tag-text: #4f6ef7;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.05);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: 0.2s ease;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f1117;
+                --card-bg: #1a1d28;
+                --text: #e8eaed;
+                --text-secondary: #9aa0b4;
+                --border: #2d3140;
+                --accent: #6b8aff;
+                --accent-hover: #85a0ff;
+                --tag-bg: #1e2545;
+                --tag-text: #8ba4ff;
+                --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+                --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.3);
+            }
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 16px;
+            transition: background var(--transition), color var(--transition);
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        header {
+            text-align: center;
+            padding: 8px 0;
+        }
+        header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        header p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 2px;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow);
+            transition: all var(--transition);
+        }
+        .card:hover {
+            box-shadow: var(--shadow-lg);
+        }
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 36px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all var(--transition);
+            position: relative;
+            background: var(--card-bg);
+        }
+        .upload-zone:hover,
+        .upload-zone.drag-over {
+            border-color: var(--accent);
+            background: var(--tag-bg);
+            box-shadow: var(--shadow-lg);
+        }
+        .upload-zone .icon-upload {
+            font-size: 3rem;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .upload-zone .upload-text {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        .upload-zone .upload-hint {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 4px;
+        }
+        #fileInput {
+            display: none;
+        }
+        .options-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 20px;
+            align-items: center;
+        }
+        .option-label {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            user-select: none;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .option-label input[type="checkbox"] {
+            width: 17px;
+            height: 17px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .stat-item {
+            background: var(--tag-bg);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-label {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        .compare-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: stretch;
+        }
+        .compare-card {
+            flex: 1;
+            min-width: 180px;
+            background: var(--tag-bg);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all var(--transition);
+        }
+        .compare-card.original {
+            border-color: #e5e7eb;
+        }
+        .compare-card.cleaned {
+            border-color: var(--success);
+        }
+        .compare-card .compare-value {
+            font-size: 1.35rem;
+            font-weight: 700;
+        }
+        .compare-card .compare-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        .compare-card .reduction {
+            color: var(--success);
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all var(--transition);
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(79, 110, 247, 0.35);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1.5px solid var(--border);
+            color: var(--text);
+        }
+        .btn-outline:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--tag-bg);
+        }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 0.78rem;
+            border-radius: 6px;
+        }
+        .btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 55vh;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .session-list::-webkit-scrollbar {
+            width: 5px;
+        }
+        .session-list::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+        .session-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+            background: var(--card-bg);
+            position: relative;
+        }
+        .session-item:hover {
+            border-color: var(--accent);
+            box-shadow: var(--shadow);
+        }
+        .session-item.selected {
+            border-color: var(--accent);
+            background: var(--tag-bg);
+        }
+        .session-item input[type="checkbox"] {
+            margin-top: 3px;
+            width: 17px;
+            height: 17px;
+            accent-color: var(--accent);
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .session-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .session-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .session-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        .session-preview {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 4px;
+        }
+        .tag {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-weight: 500;
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+        }
+        .tag-short {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+        .tag-medium {
+            background: #fef3c7;
+            color: #b45309;
+        }
+        .tag-long {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .tag-decision {
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+        .tag-code {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        @media (prefers-color-scheme: dark) {
+            .tag-short {
+                background: #1e3a5f;
+                color: #7cb8ff;
+            }
+            .tag-medium {
+                background: #3d2e0a;
+                color: #fcd34d;
+            }
+            .tag-long {
+                background: #3b1010;
+                color: #fca5a5;
+            }
+            .tag-decision {
+                background: #2a1e45;
+                color: #b794f4;
+            }
+            .tag-code {
+                background: #0d2e1d;
+                color: #6ee7b7;
+            }
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        .empty-state .icon {
+            font-size: 3rem;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 4px 0;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2.5px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #1a1a2e;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 500;
+            z-index: 1000;
+            box-shadow: var(--shadow-lg);
+            animation: fadeInUp 0.3s ease;
+            pointer-events: none;
+        }
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @media (max-width: 640px) {
+            body {
+                padding: 8px;
+            }
+            .card {
+                padding: 14px;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+            .compare-bar {
+                flex-direction: column;
+            }
+            .session-list {
+                max-height: 40vh;
+            }
+            header h1 {
+                font-size: 1.4rem;
+            }
+            .btn {
+                padding: 7px 12px;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧹 聊天记录清洗工具</h1>
+            <p>上传 · 清洗 · 分类 · 导出 — 全部在浏览器内完成<br><small style="opacity:0.6;">摇光工具库 · 支持 DeepSeek conversations.json</small></p>
+        </header>
+
+        <!-- 上传区域 -->
+        <div class="card upload-zone" id="uploadZone">
+            <span class="icon-upload">📁</span>
+            <span class="upload-text">点击上传或拖拽 conversations.json</span>
+            <span class="upload-hint">支持 DeepSeek 导出的原始格式 · 最大支持 100MB</span>
+            <input type="file" id="fileInput" accept=".json">
+        </div>
+
+        <!-- 选项面板 -->
+        <div class="card" id="optionsPanel" style="display:none;">
+            <div class="options-row">
+                <label class="option-label" title="删除AI回答中的客套话、重复句子、多余空行">
+                    <input type="checkbox" id="optClean" checked> 🧼 启用内容清洗
+                </label>
+                <label class="option-label" title="分离AI回答中的思考过程和最终答案">
+                    <input type="checkbox" id="optThink" checked> 🧠 分离思维链
+                </label>
+                <label class="option-label" title="自动分类会话长度、是否含决策、是否含代码">
+                    <input type="checkbox" id="optClassify" checked> 🏷️ 智能分类
+                </label>
+            </div>
+        </div>
+
+        <!-- 统计对比面板 -->
+        <div class="card" id="statsPanel" style="display:none;">
+            <div class="stats-grid" id="statsGrid"></div>
+            <div class="compare-bar" id="compareBar" style="margin-top:14px;"></div>
+        </div>
+
+        <!-- 会话列表 -->
+        <div class="card" id="sessionPanel" style="display:none;">
+            <div class="toolbar" style="margin-bottom:12px;">
+                <button class="btn btn-sm btn-outline" id="btnSelectAll">✅ 全选</button>
+                <button class="btn btn-sm btn-outline" id="btnDeselectAll">⬜ 反选</button>
+                <span style="flex:1;"></span>
+                <span style="font-size:0.85rem;color:var(--text-secondary);" id="selectionCount">已选 0 个会话</span>
+            </div>
+            <div class="session-list" id="sessionList"></div>
+        </div>
+
+        <!-- 导出按钮 -->
+        <div class="card" id="exportPanel" style="display:none;">
+            <div class="toolbar" style="justify-content:center;gap:12px;flex-wrap:wrap;">
+                <button class="btn btn-primary" id="btnExportJSON">📦 导出清洗后 JSON</button>
+                <button class="btn btn-outline" id="btnExportMD">📝 导出 Markdown</button>
+                <label class="option-label" style="font-size:0.8rem;" title="在Markdown中展开思维链内容">
+                    <input type="checkbox" id="optExpandThink" checked> MD中展开思维链
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // ==================== DOM 元素 ====================
+            const uploadZone = document.getElementById('uploadZone');
+            const fileInput = document.getElementById('fileInput');
+            const optionsPanel = document.getElementById('optionsPanel');
+            const statsPanel = document.getElementById('statsPanel');
+            const sessionPanel = document.getElementById('sessionPanel');
+            const exportPanel = document.getElementById('exportPanel');
+            const statsGrid = document.getElementById('statsGrid');
+            const compareBar = document.getElementById('compareBar');
+            const sessionList = document.getElementById('sessionList');
+            const selectionCount = document.getElementById('selectionCount');
+            const optClean = document.getElementById('optClean');
+            const optThink = document.getElementById('optThink');
+            const optClassify = document.getElementById('optClassify');
+            const optExpandThink = document.getElementById('optExpandThink');
+            const btnSelectAll = document.getElementById('btnSelectAll');
+            const btnDeselectAll = document.getElementById('btnDeselectAll');
+            const btnExportJSON = document.getElementById('btnExportJSON');
+            const btnExportMD = document.getElementById('btnExportMD');
+
+            // ==================== 全局状态 ====================
+            let rawFileSize = 0; // 原始文件大小（字节）
+            let allSessions = []; // 解析后的所有会话 {id, title, messages:[{role, content, thinking, answer, type}], stats:{lengthCat, hasDecision, hasCode}, rawCharCount, cleanedCharCount}
+            let sessionCheckboxes = new Map(); // sessionId -> checkbox元素
+            let processingAborted = false;
+
+            // ==================== 工具函数 ====================
+            function showToast(msg, duration = 2200) {
+                const existing = document.querySelector('.toast');
+                if (existing) existing.remove();
+                const toast = document.createElement('div');
+                toast.className = 'toast';
+                toast.textContent = msg;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), duration);
+            }
+
+            function formatBytes(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1048576) return (bytes / 1024).toFixed(2) + ' KB';
+                return (bytes / 1048576).toFixed(2) + ' MB';
+            }
+
+            function estimateTokens(charCount) {
+                // 中英文混合按0.7~1字符/token，取0.85字符/token作为中间估计
+                const low = Math.round(charCount / 1.0);
+                const high = Math.round(charCount / 0.7);
+                const mid = Math.round(charCount / 0.85);
+                return { low, high, mid, charCount };
+            }
+
+            function formatTokenEst(est) {
+                if (est.mid >= 1000000) return (est.mid / 1000000).toFixed(1) + 'M';
+                if (est.mid >= 1000) return (est.mid / 1000).toFixed(1) + 'K';
+                return est.mid.toString();
+            }
+
+            // ==================== 清洗规则 ====================
+            const GREETING_PREFIXES = [
+                /^好的[，,]\s*/,
+                /^没问题[，,]\s*/,
+                /^当然可以[，,]\s*/,
+                /^很高兴[为能].*?[，,]\s*/,
+                /^作为一名AI[^，,。]*[，,]\s*/,
+                /^作为DeepSeek[^，,。]*[，,]\s*/,
+                /^我是DeepSeek[^，,。]*[，,]\s*/,
+                /^我是人工智能[^，,。]*[，,]\s*/,
+                /^您好[！!]\s*/,
+                /^你好[！!]\s*/,
+                /^嗨[！!，,]\s*/,
+                /^当然[！!，,]\s*/i,
+                /^Sure[!,]?\s*/i,
+                /^Of course[!,]?\s*/i,
+                /^Great question[!,]?\s*/i,
+                /^I'd be happy to\s*/i,
+                /^Let me\s*/i,
+            ];
+
+            const GREETING_SUFFIXES = [
+                /[，,]\s*还有什么[可以需要].*?[？?]?\s*$/,
+                /[，,]\s*有什么[问题需要].*?[？?]?\s*$/,
+                /[，,]\s*希望这[对能].*?[。.]?\s*$/,
+                /[，,]\s*如果您[还有需要].*?[。.]?\s*$/,
+                /[，,]\s*随时[告诉联系].*?[。.]?\s*$/,
+                /[，,]\s*欢迎[继续随时].*?[。.]?\s*$/,
+                /[，,]\s*请[随时告诉].*?[。.]?\s*$/,
+                /[，,]\s*祝[您你].*?[！!。.]?\s*$/,
+                /[，,]\s*以上[仅供].*?[。.]?\s*$/,
+                /\s*Hope this helps[.!]?\s*$/i,
+                /\s*Let me know if.*$/i,
+                /\s*Feel free to.*$/i,
+            ];
+
+            function cleanAIResponse(text) {
+                if (!text || typeof text !== 'string') return text;
+                let cleaned = text.trim();
+
+                // 删除前缀客套话
+                for (const pattern of GREETING_PREFIXES) {
+                    cleaned = cleaned.replace(pattern, '');
+                }
+
+                // 删除后缀客套话
+                for (const pattern of GREETING_SUFFIXES) {
+                    cleaned = cleaned.replace(pattern, '');
+                }
+
+                // 删除多余空行（3个以上连续换行合并为2个）
+                cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+                cleaned = cleaned.replace(/^\n+/, '').replace(/\n+$/, '');
+
+                // 删除连续重复的句子
+                cleaned = removeConsecutiveDuplicates(cleaned);
+
+                return cleaned.trim();
+            }
+
+            function removeConsecutiveDuplicates(text) {
+                // 按句子分割（保留分隔符）
+                const sentences = text.split(/(?<=[。！？.!?\n])\s*/);
+                const result = [];
+                const seen = new Set();
+                for (const s of sentences) {
+                    const normalized = s.replace(/\s+/g, '').trim();
+                    if (normalized.length < 3) {
+                        result.push(s);
+                        continue;
+                    }
+                    if (seen.has(normalized)) {
+                        // 检查是否与上一个加入的相同
+                        const lastNorm = (result[result.length - 1] || '').replace(/\s+/g, '').trim();
+                        if (lastNorm === normalized) {
+                            continue; // 跳过连续重复
+                        }
+                    }
+                    seen.add(normalized);
+                    result.push(s);
+                    // 保持seen集合不过大
+                    if (seen.size > 200) seen.clear();
+                }
+                return result.join('');
+            }
+
+            function cleanUserMessage(text) {
+                if (!text || typeof text !== 'string') return text;
+                // 只去除明显无关的首尾空格和多余空行
+                let cleaned = text.trim();
+                cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+                return cleaned;
+            }
+
+            // ==================== 思维链分离 ====================
+            function separateThinking(content) {
+                if (!content || typeof content !== 'string') return { thinking: '', answer: content || '' };
+
+                // 模式1: 【思考】...【回答】 或 【思考】...【答案】
+                const pattern1 = /【思考】([\s\S]*?)【(?:回答|答案|回复)】/i;
+                const match1 = content.match(pattern1);
+                if (match1) {
+                    const thinking = match1[1].trim();
+                    const answer = content.slice(match1.index + match1[0].length).trim();
+                    return { thinking, answer: answer || content.replace(match1[0], '').trim() };
+                }
+
+                // 模式2: ```think ... ``` 或 ```thinking ... ```
+                const pattern2 = /```(?:think|thinking|思考)\s*\n?([\s\S]*?)```/i;
+                const match2 = content.match(pattern2);
+                if (match2) {
+                    const thinking = match2[1].trim();
+                    const answer = content.replace(match2[0], '').trim();
+                    return { thinking, answer };
+                }
+
+                // 模式3: （分析：...）或（步骤：...）或（思路：...）
+                const pattern3 =
+                /[（(]\s*(?:分析|步骤|思路|推理|思考过程|我的思路|解题思路)[：:]\s*([\s\S]*?)[）)]\s*(?=[\n\r]|$)/i;
+                const match3 = content.match(pattern3);
+                if (match3 && match3[1].length > 10) {
+                    const thinking = match3[1].trim();
+                    const answer = content.replace(match3[0], '').trim();
+                    return { thinking, answer };
+                }
+
+                // 模式4: 以"让我想想"或"让我分析"开头的大段内容后跟明显回答
+                const pattern4 =
+                /^(让我想想|让我分析一下|我来分析|先分析一下|思考一下)[：:，,\s]*\n?([\s\S]{30,}?)(?=\n\n[^\n]{20,}|$)/i;
+                const match4 = content.match(pattern4);
+                if (match4 && match4[2] && match4[2].length > 20) {
+                    const thinkingPart = match4[2].trim();
+                    const restContent = content.slice(match4.index + match4[0].length).trim();
+                    if (restContent.length > 15) {
+                        return { thinking: thinkingPart, answer: restContent };
+                    }
+                }
+
+                return { thinking: '', answer: content };
+            }
+
+            // ==================== 智能分类 ====================
+            function classifySession(messages) {
+                const allText = messages.map(m => (m.answer || m.content || '')).join(' ');
+                const charCount = allText.length;
+
+                // 长度分类
+                let lengthCat = '短';
+                if (charCount >= 800 && charCount < 2000) lengthCat = '中';
+                else if (charCount >= 2000) lengthCat = '长';
+
+                // 是否含决策关键词
+                const decisionKeywords = [
+                    '应该', '推荐', '建议', '方案一', '方案二', '首选', '优先', '最好', '不妨',
+                    '可以试试', '建议您', '我推荐', '我建议', '更好的选择', '权衡', '利弊',
+                    'pros and cons', 'recommend', 'suggest', 'you should', 'better to',
+                    '优先考虑', '首选方案', '备选', '折中', '最佳实践'
+                ];
+                const hasDecision = decisionKeywords.some(kw => allText.toLowerCase().includes(kw.toLowerCase()));
+
+                // 是否含代码块
+                const hasCode = /```[\s\S]*?```/.test(allText) ||
+                    /\b(function|def |class |const |let |var |import |export |require\()/.test(allText) ||
+                    /<code>/.test(allText) ||
+                    /\b(console\.log|print\(|echo |System\.out)/.test(allText);
+
+                return { lengthCat, hasDecision, hasCode, charCount };
+            }
+
+            // ==================== 解析 mapping 树 ====================
+            function parseMapping(mapping) {
+                if (!mapping || typeof mapping !== 'object') return [];
+                const nodeIds = Object.keys(mapping);
+                if (nodeIds.length === 0) return [];
+
+                // 找到根节点（parent为null或不存在parent字段的节点）
+                let rootId = null;
+                for (const id of nodeIds) {
+                    const node = mapping[id];
+                    if (node.parent === null || node.parent === undefined || node.parent === '') {
+                        rootId = id;
+                        break;
+                    }
+                }
+                // 如果没找到parent为null的，找第一个没有parent被其他节点引用的
+                if (!rootId) {
+                    const childIds = new Set();
+                    for (const id of nodeIds) {
+                        const node = mapping[id];
+                        if (node.parent) childIds.add(node.parent);
+                    }
+                    for (const id of nodeIds) {
+                        if (!childIds.has(id)) {
+                            rootId = id;
+                            break;
+                        }
+                    }
+                }
+                if (!rootId && nodeIds.length > 0) {
+                    rootId = nodeIds[0]; // 兜底
+                }
+                if (!rootId) return [];
+
+                // 从根节点开始，沿children链遍历
+                const messages = [];
+                const visited = new Set();
+                let currentId = rootId;
+                const MAX_DEPTH = 10000;
+
+                while (currentId && visited.size < MAX_DEPTH) {
+                    if (visited.has(currentId)) break;
+                    visited.add(currentId);
+                    const node = mapping[currentId];
+                    if (!node) break;
+
+                    // 提取消息内容
+                    if (node.message && node.message.fragments && node.message.fragments.length > 0) {
+                        const fragment = node.message.fragments[0];
+                        const msgType = fragment.type || '';
+                        // 尝试多种字段获取内容
+                        let content = fragment.content || fragment.text || fragment.value || '';
+                        if (!content && typeof fragment === 'string') content = fragment;
+
+                        if (content && typeof content === 'string' && content.trim()) {
+                            const role = (msgType === 'REQUEST') ? 'user' : 'assistant';
+                            messages.push({
+                                role,
+                                content: content.trim(),
+                                type: msgType,
+                                rawContent: content.trim(),
+                            });
+                        }
+                    }
+
+                    // 跟随第一个child继续
+                    if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+                        currentId = node.children[0];
+                    } else {
+                        break;
+                    }
+                }
+
+                return messages;
+            }
+
+            // ==================== 处理上传的文件 ====================
+            async function processFile(file) {
+                if (!file) return;
+                if (!file.name.toLowerCase().endsWith('.json')) {
+                    showToast('⚠️ 请上传 .json 文件');
+                    return;
+                }
+                if (file.size > 100 * 1024 * 1024) {
+                    showToast('⚠️ 文件过大，请上传小于100MB的文件');
+                    return;
+                }
+
+                processingAborted = false;
+                rawFileSize = file.size;
+                allSessions = [];
+                sessionCheckboxes.clear();
+
+                // 显示加载状态
+                uploadZone.innerHTML =
+                    '<span class="loading-spinner"></span><span class="upload-text">正在读取文件...</span>';
+                uploadZone.classList.add('drag-over');
+
+                try {
+                    // 读取文件
+                    const text = await readFileAsText(file);
+                    uploadZone.innerHTML =
+                        '<span class="loading-spinner"></span><span class="upload-text">正在解析JSON...</span>';
+
+                    // 解析JSON（可能耗时）
+                    let data;
+                    try {
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        throw new Error('JSON解析失败：' + e.message);
+                    }
+
+                    if (!Array.isArray(data)) {
+                        // 可能是对象格式，尝试找到会话数组
+                        if (data && Array.isArray(data.conversations)) {
+                            data = data.conversations;
+                        } else if (data && Array.isArray(data.sessions)) {
+                            data = data.sessions;
+                        } else if (data && Array.isArray(data.chats)) {
+                            data = data.chats;
+                        } else {
+                            throw new Error('未识别的JSON格式，请确保是DeepSeek导出的conversations.json');
+                        }
+                    }
+
+                    const totalConversations = data.length;
+                    uploadZone.innerHTML =
+                        `<span class="loading-spinner"></span><span class="upload-text">正在处理 ${totalConversations} 个会话...</span>`;
+
+                    // 异步分批处理
+                    const BATCH_SIZE = 20;
+                    const allParsedSessions = [];
+
+                    for (let batchStart = 0; batchStart < totalConversations; batchStart += BATCH_SIZE) {
+                        if (processingAborted) break;
+                        const batchEnd = Math.min(batchStart + BATCH_SIZE, totalConversations);
+                        const batch = data.slice(batchStart, batchEnd);
+
+                        for (const conv of batch) {
+                            if (processingAborted) break;
+                            const convId = conv.id || conv.conversation_id || conv.uuid || ('conv_' + Math.random()
+                                .toString(36).slice(2, 10));
+                            const title = conv.title || conv.name || conv.topic || '未命名会话';
+                            const mapping = conv.mapping || {};
+
+                            const rawMessages = parseMapping(mapping);
+                            if (rawMessages.length === 0) continue;
+
+                            // 应用清洗和思维链分离
+                            const processedMessages = [];
+                            for (const msg of rawMessages) {
+                                const isUser = msg.role === 'user';
+                                let cleanedContent = msg.content;
+                                let thinking = '';
+                                let answer = msg.content;
+
+                                if (isUser) {
+                                    if (optClean.checked) {
+                                        cleanedContent = cleanUserMessage(msg.content);
+                                    }
+                                    processedMessages.push({
+                                        role: 'user',
+                                        content: cleanedContent,
+                                        thinking: '',
+                                        answer: cleanedContent,
+                                        type: msg.type,
+                                    });
+                                } else {
+                                    // AI回答
+                                    if (optClean.checked) {
+                                        cleanedContent = cleanAIResponse(msg.content);
+                                    }
+                                    if (optThink.checked) {
+                                        const separated = separateThinking(cleanedContent);
+                                        thinking = separated.thinking;
+                                        answer = separated.answer;
+                                    } else {
+                                        answer = cleanedContent;
+                                    }
+                                    processedMessages.push({
+                                        role: 'assistant',
+                                        content: cleanedContent,
+                                        thinking: thinking,
+                                        answer: answer,
+                                        type: msg.type,
+                                    });
+                                }
+                            }
+
+                            // 分类
+                            let stats = { lengthCat: '短', hasDecision: false, hasCode: false, charCount: 0 };
+                            if (optClassify.checked) {
+                                stats = classifySession(processedMessages);
+                            } else {
+                                stats.charCount = processedMessages.reduce((sum, m) => sum + (m.answer || m.content ||
+                                    '').length, 0);
+                                if (stats.charCount < 800) stats.lengthCat = '短';
+                                else if (stats.charCount < 2000) stats.lengthCat = '中';
+                                else stats.lengthCat = '长';
+                            }
+
+                            // 计算原始字符数和清洗后字符数
+                            const rawCharCount = rawMessages.reduce((sum, m) => sum + (m.rawContent || m.content || '')
+                                .length, 0);
+                            const cleanedCharCount = processedMessages.reduce((sum, m) => sum + (m.answer || m.content || '')
+                                .length, 0);
+
+                            allParsedSessions.push({
+                                id: convId,
+                                title,
+                                messages: processedMessages,
+                                rawMessages,
+                                stats,
+                                rawCharCount,
+                                cleanedCharCount,
+                                createdAt: conv.created_at || conv.create_time || conv.timestamp || null,
+                            });
+                        }
+
+                        // 让出主线程
+                        await sleep(0);
+                        const progress = Math.min(batchEnd, totalConversations);
+                        uploadZone.innerHTML =
+                            `<span class="loading-spinner"></span><span class="upload-text">处理中... ${progress}/${totalConversations} 个会话</span>`;
+                    }
+
+                    if (processingAborted) {
+                        resetUploadZone();
+                        return;
+                    }
+
+                    allSessions = allParsedSessions;
+
+                    // 恢复上传区域
+                    resetUploadZone();
+                    uploadZone.querySelector('.upload-text').textContent =
+                        `✅ 已加载 ${allSessions.length} 个会话`;
+                    uploadZone.querySelector('.upload-hint').textContent =
+                        `原始文件: ${formatBytes(rawFileSize)} · 点击可重新上传`;
+
+                    // 显示面板
+                    optionsPanel.style.display = '';
+                    statsPanel.style.display = '';
+                    sessionPanel.style.display = '';
+                    exportPanel.style.display = '';
+
+                    // 渲染
+                    renderAll();
+
+                    if (allSessions.length === 0) {
+                        showToast('⚠️ 未找到有效会话内容，请检查文件格式');
+                    } else {
+                        showToast(`✅ 成功加载 ${allSessions.length} 个会话`);
+                    }
+
+                } catch (err) {
+                    console.error('处理文件出错:', err);
+                    resetUploadZone();
+                    showToast('❌ ' + (err.message || '处理失败，请检查文件格式'));
+                }
+            }
+
+            function resetUploadZone() {
+                uploadZone.classList.remove('drag-over');
+                uploadZone.innerHTML = `
+                    <span class="icon-upload">📁</span>
+                    <span class="upload-text">点击上传或拖拽 conversations.json</span>
+                    <span class="upload-hint">支持 DeepSeek 导出的原始格式 · 最大支持 100MB</span>
+                `;
+            }
+
+            function readFileAsText(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('文件读取失败'));
+                    reader.readAsText(file);
+                });
+            }
+
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            // ==================== 渲染 ====================
+            function renderAll() {
+                renderStats();
+                renderSessionList();
+                updateCompareBar();
+                updateSelectionCount();
+            }
+
+            function renderStats() {
+                const totalSessions = allSessions.length;
+                const totalMessages = allSessions.reduce((sum, s) => sum + s.messages.length, 0);
+                const totalRawChars = allSessions.reduce((sum, s) => sum + s.rawCharCount, 0);
+                const totalCleanedChars = allSessions.reduce((sum, s) => sum + s.cleanedCharCount, 0);
+                const rawTokens = estimateTokens(totalRawChars);
+                const cleanedTokens = estimateTokens(totalCleanedChars);
+
+                const sessionsWithCode = allSessions.filter(s => s.stats.hasCode).length;
+                const sessionsWithDecision = allSessions.filter(s => s.stats.hasDecision).length;
+
+                statsGrid.innerHTML = `
+                    <div class="stat-item">
+                        <div class="stat-value">${totalSessions}</div>
+                        <div class="stat-label">📋 总会话数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${totalMessages}</div>
+                        <div class="stat-label">💬 总消息数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${formatTokenEst(rawTokens)}</div>
+                        <div class="stat-label">🔤 原始Token估算</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${sessionsWithCode}</div>
+                        <div class="stat-label">💻 含代码会话</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${sessionsWithDecision}</div>
+                        <div class="stat-label">🎯 含决策会话</div>
+                    </div>
+                `;
+            }
+
+            function updateCompareBar() {
+                const selectedSessions = getSelectedSessions();
+                const totalRawChars = selectedSessions.reduce((sum, s) => sum + s.rawCharCount, 0);
+                const totalCleanedChars = selectedSessions.reduce((sum, s) => sum + s.cleanedCharCount, 0);
+                const rawTokens = estimateTokens(totalRawChars);
+                const cleanedTokens = estimateTokens(totalCleanedChars);
+
+                // 估算JSON大小（粗略：每个字符约1-2字节在JSON中，取1.5）
+                const rawJSONSizeEst = totalRawChars * 1.6;
+                const cleanedJSONSizeEst = totalCleanedChars * 1.6;
+
+                const tokenReduction = rawTokens.mid > 0 ?
+                    ((rawTokens.mid - cleanedTokens.mid) / rawTokens.mid * 100).toFixed(1) :
+                    0;
+
+                compareBar.innerHTML = `
+                    <div class="compare-card original">
+                        <div class="compare-label">📄 原始内容（勾选会话）</div>
+                        <div class="compare-value">${formatBytes(rawJSONSizeEst)}</div>
+                        <div style="font-size:0.78rem;color:var(--text-secondary);">Token: ~${formatTokenEst(rawTokens)}</div>
+                    </div>
+                    <div class="compare-card cleaned">
+                        <div class="compare-label">✨ 清洗后待导出</div>
+                        <div class="compare-value">${formatBytes(cleanedJSONSizeEst)}</div>
+                        <div style="font-size:0.78rem;color:var(--text-secondary);">Token: ~${formatTokenEst(cleanedTokens)}</div>
+                        <div class="reduction">⬇ 减少 ${tokenReduction}%</div>
+                    </div>
+                    <div style="flex:0 0 auto;display:flex;align-items:center;font-size:2rem;">➡️</div>
+                    <div class="compare-card" style="border-color:var(--accent);">
+                        <div class="compare-label">💰 预计节省Token</div>
+                        <div class="compare-value" style="color:var(--success);">~${formatTokenEst({mid: rawTokens.mid - cleanedTokens.mid, low:0, high:0})}</div>
+                        <div style="font-size:0.78rem;color:var(--text-secondary);">每次输入可节省</div>
+                    </div>
+                `;
+            }
+
+            function renderSessionList() {
+                sessionList.innerHTML = '';
+                sessionCheckboxes.clear();
+
+                if (allSessions.length === 0) {
+                    sessionList.innerHTML =
+                        '<div class="empty-state"><span class="icon">📭</span><p>暂无会话数据</p></div>';
+                    return;
+                }
+
+                allSessions.forEach((session, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'session-item selected';
+                    item.dataset.sessionId = session.id;
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = true;
+                    checkbox.dataset.sessionId = session.id;
+                    checkbox.addEventListener('change', () => {
+                        if (checkbox.checked) {
+                            item.classList.add('selected');
+                        } else {
+                            item.classList.remove('selected');
+                        }
+                        updateCompareBar();
+                        updateSelectionCount();
+                    });
+                    checkbox.addEventListener('click', (e) => e.stopPropagation());
+
+                    const info = document.createElement('div');
+                    info.className = 'session-info';
+
+                    const title = document.createElement('div');
+                    title.className = 'session-title';
+                    title.textContent = session.title || '未命名会话';
+                    title.title = session.title;
+
+                    const meta = document.createElement('div');
+                    meta.className = 'session-meta';
+                    const msgCount = session.messages.length;
+                    const userMsgs = session.messages.filter(m => m.role === 'user').length;
+                    meta.textContent = `${msgCount} 条消息 (${userMsgs}问/${msgCount - userMsgs}答) · ${session.stats.lengthCat}会话`;
+
+                    const preview = document.createElement('div');
+                    preview.className = 'session-preview';
+                    const firstUserMsg = session.messages.find(m => m.role === 'user');
+                    preview.textContent = firstUserMsg ? firstUserMsg.content.slice(0, 80) : '(无内容)';
+                    preview.title = firstUserMsg ? firstUserMsg.content : '';
+
+                    const tags = document.createElement('div');
+                    tags.className = 'tags';
+                    const lengthCat = session.stats.lengthCat;
+                    tags.innerHTML +=
+                        `<span class="tag tag-${lengthCat === '短' ? 'short' : lengthCat === '中' ? 'medium' : 'long'}">${lengthCat === '短' ? '📏 短' : lengthCat === '中' ? '📐 中' : '📏 长'}</span>`;
+                    if (session.stats.hasDecision) tags.innerHTML +=
+                        '<span class="tag tag-decision">🎯 含决策</span>';
+                    if (session.stats.hasCode) tags.innerHTML +=
+                        '<span class="tag tag-code">💻 含代码</span>';
+
+                    info.appendChild(title);
+                    info.appendChild(meta);
+                    info.appendChild(preview);
+                    info.appendChild(tags);
+
+                    item.appendChild(checkbox);
+                    item.appendChild(info);
+
+                    // 点击整行切换复选框
+                    item.addEventListener('click', (e) => {
+                        if (e.target === checkbox) return;
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    });
+
+                    sessionList.appendChild(item);
+                    sessionCheckboxes.set(session.id, checkbox);
+                });
+
+                updateSelectionCount();
+                updateCompareBar();
+            }
+
+            function getSelectedSessions() {
+                const selected = [];
+                for (const [id, checkbox] of sessionCheckboxes) {
+                    if (checkbox.checked) {
+                        const session = allSessions.find(s => s.id === id);
+                        if (session) selected.push(session);
+                    }
+                }
+                return selected;
+            }
+
+            function updateSelectionCount() {
+                const count = getSelectedSessions().length;
+                selectionCount.textContent = `已选 ${count} / ${allSessions.length} 个会话`;
+            }
+
+            // ==================== 导出功能 ====================
+            function buildCleanedJSON(selectedSessions) {
+                return selectedSessions.map(session => ({
+                    id: session.id,
+                    title: session.title,
+                    created_at: session.createdAt,
+                    stats: {
+                        length_category: session.stats.lengthCat,
+                        has_decision: session.stats.hasDecision,
+                        has_code: session.stats.hasCode,
+                        char_count: session.stats.charCount,
+                    },
+                    messages: session.messages.map(m => ({
+                        role: m.role,
+                        content: m.answer || m.content,
+                        thinking: m.thinking || '',
+                        type: m.type,
+                    })),
+                }));
+            }
+
+            function exportJSON() {
+                const selected = getSelectedSessions();
+                if (selected.length === 0) {
+                    showToast('⚠️ 请先勾选要导出的会话');
+                    return;
+                }
+                const data = buildCleanedJSON(selected);
+                const jsonStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                downloadBlob(blob, 'deepseek_cleaned_conversations.json');
+                showToast(`✅ 已导出 ${selected.length} 个会话 (${formatBytes(blob.size)})`);
+            }
+
+            function exportMarkdown() {
+                const selected = getSelectedSessions();
+                if (selected.length === 0) {
+                    showToast('⚠️ 请先勾选要导出的会话');
+                    return;
+                }
+                const expandThinking = optExpandThink.checked;
+                let md = '# DeepSeek 聊天记录（已清洗）\n\n';
+                md += `> 导出时间: ${new Date().toLocaleString()}\n`;
+                md += `> 会话数: ${selected.length}\n`;
+                md += `> 清洗选项: 内容清洗${optClean.checked ? '✅' : '❌'} | 思维链分离${optThink.checked ? '✅' : '❌'} | 智能分类${optClassify.checked ? '✅' : '❌'}\n\n`;
+                md += '---\n\n';
+
+                selected.forEach((session, idx) => {
+                    md += `## ${idx + 1}. ${session.title || '未命名会话'}\n\n`;
+                    md +=
+                        `**分类**: ${session.stats.lengthCat}会话 | 含决策: ${session.stats.hasDecision ? '是' : '否'} | 含代码: ${session.stats.hasCode ? '是' : '否'} | 字符数: ${session.stats.charCount}\n\n`;
+                    if (session.createdAt) {
+                        md += `**创建时间**: ${new Date(session.createdAt).toLocaleString()}\n\n`;
+                    }
+                    md += '---\n\n';
+
+                    session.messages.forEach((m, mi) => {
+                        const roleLabel = m.role === 'user' ? '🧑 **用户**' : '🤖 **AI**';
+                        md += `### ${roleLabel}\n\n`;
+
+                        if (m.thinking && expandThinking) {
+                            md +=
+                                '<details><summary>🧠 思考过程</summary>\n\n';
+                            md += '```\n' + m.thinking + '\n```\n\n';
+                            md += '</details>\n\n';
+                            md += '**回答：**\n\n';
+                        } else if (m.thinking && !expandThinking) {
+                            md +=
+                                '<details><summary>🧠 思考过程（点击展开）</summary>\n\n';
+                            md += '```\n' + m.thinking + '\n```\n\n';
+                            md += '</details>\n\n';
+                            md += '**回答：**\n\n';
+                        }
+
+                        const displayContent = m.answer || m.content || '';
+                        md += displayContent + '\n\n';
+
+                        if (mi < session.messages.length - 1) {
+                            md += '---\n\n';
+                        }
+                    });
+
+                    if (idx < selected.length - 1) {
+                        md += '\n\n---\n\n';
+                    }
+                });
+
+                const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+                downloadBlob(blob, 'deepseek_cleaned_conversations.md');
+                showToast(`✅ 已导出 Markdown (${formatBytes(blob.size)})`);
+            }
+
+            function downloadBlob(blob, filename) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            // ==================== 事件监听 ====================
+            uploadZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files && fileInput.files[0]) {
+                    processFile(fileInput.files[0]);
+                }
+            });
+
+            // 拖拽事件
+            uploadZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                uploadZone.classList.add('drag-over');
+            });
+            uploadZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                uploadZone.classList.remove('drag-over');
+            });
+            uploadZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                uploadZone.classList.remove('drag-over');
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    processFile(files[0]);
+                }
+            });
+
+            // 选项变化时重新处理
+            [optClean, optThink, optClassify].forEach(opt => {
+                opt.addEventListener('change', () => {
+                    if (allSessions.length > 0 && fileInput.files && fileInput.files[0]) {
+                        // 重新处理
+                        processFile(fileInput.files[0]);
+                    }
+                });
+            });
+
+            // 全选/反选
+            btnSelectAll.addEventListener('click', () => {
+                sessionCheckboxes.forEach(cb => { cb.checked = true; });
+                document.querySelectorAll('.session-item').forEach(item => item.classList.add(
+                    'selected'));
+                updateCompareBar();
+                updateSelectionCount();
+            });
+            btnDeselectAll.addEventListener('click', () => {
+                const anyChecked = Array.from(sessionCheckboxes.values()).some(cb => cb.checked);
+                sessionCheckboxes.forEach(cb => { cb.checked = !anyChecked; });
+                document.querySelectorAll('.session-item').forEach(item => {
+                    if (anyChecked) item.classList.remove('selected');
+                    else item.classList.add('selected');
+                });
+                updateCompareBar();
+                updateSelectionCount();
+            });
+
+            // 导出按钮
+            btnExportJSON.addEventListener('click', exportJSON);
+            btnExportMD.addEventListener('click', exportMarkdown);
+            optExpandThink.addEventListener('change', () => {
+                // 仅影响下次导出，无需额外操作
+            });
+
+            // 全局键盘快捷键
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'a' && document.activeElement === document.body) {
+                    e.preventDefault();
+                    btnSelectAll.click();
+                }
+            });
+
+            // 初始状态：隐藏面板
+            optionsPanel.style.display = 'none';
+            statsPanel.style.display = 'none';
+            sessionPanel.style.display = 'none';
+            exportPanel.style.display = 'none';
+
+            console.log('🧹 DeepSeek 聊天记录清洗工具已就绪');
+            console.log('  - 支持拖拽或点击上传 conversations.json');
+            console.log('  - 所有处理均在浏览器本地完成，数据不上传');
+            console.log('  - 支持大文件异步处理，不卡顿界面');
+        })();
+    </script>
+
+    <footer style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.75rem;opacity:0.6;">摇光工具库 · 纯浏览器端处理 · 数据不上传服务器</footer>
+</body>
+</html>
