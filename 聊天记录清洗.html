@@ -1591,6 +1591,13 @@ onclick="const ta=document.getElementById('compressPromptFree');ta.select();docu
                     uploadZone.innerHTML =
                         '<span style="font-size:2rem;">✅</span><span class="upload-text">已导入分享链接</span><span class="upload-hint">' + title + ' · 共 ' + messages.length + ' 条消息</span>';
 
+                    // 显示所有面板
+                    optionsPanel.style.display = '';
+                    statsPanel.style.display = '';
+                    sessionPanel.style.display = '';
+                    exportPanel.style.display = '';
+                    compressPanel.style.display = '';
+
                     renderAll();
 
                     showShareStatus('成功导入 ' + messages.length + ' 条消息', false);
