@@ -1506,173 +1506,15 @@ onclick="const ta=document.getElementById('compressPromptFree');ta.select();docu
             const btnFetchShare = document.getElementById('btnFetchShare');
             const shareStatus = document.getElementById('shareStatus');
 
-            // CORS 代理列表（按优先级）
-            const CORS_PROXIES = [
-                (url) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-                (url) => 'https://corsproxy.io/?' + encodeURIComponent(url),
-                (url) => 'https://cors-anywhere.herokuapp.com/' + url,
-            ];
-
             function showShareStatus(msg, isError) {
                 shareStatus.style.display = 'block';
                 shareStatus.textContent = msg;
                 shareStatus.style.color = isError ? 'var(--danger)' : 'var(--text-secondary)';
             }
 
-            async function fetchWithProxy(url, proxyIndex) {
-                if (proxyIndex >= CORS_PROXIES.length) {
-                    throw new Error('所有代理均不可用');
-                }
-                const proxyUrl = CORS_PROXIES[proxyIndex](url);
-                try {
-                    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                    return await resp.text();
-                } catch (e) {
-                    if (proxyIndex < CORS_PROXIES.length - 1) {
-                        return fetchWithProxy(url, proxyIndex + 1);
-                    }
-                    throw e;
-                }
-            }
-
             function extractShareToken(url) {
-                // 支持 /share/xxx 和 /a/xxx 格式，去掉尾部斜杠和查询参数
                 const m = url.match(/chat\.deepseek\.com\/(?:share|a)\/([a-zA-Z0-9_\-]+)/);
                 return m ? m[1] : null;
-            }
-
-            function parseShareHTML(html, token) {
-                // 策略1：解析 self.__next_f.push([1, "..."]) 中的 JSON chunk（Next.js RSC 流式传输格式）
-                const rscChunks = [];
-                const rscPattern = /self\.__next_f\.push\(\[1,\s*"((?:[^"\\]|\\.)*)"\s*\]\)/g;
-                let rscMatch;
-                while ((rscMatch = rscPattern.exec(html)) !== null) {
-                    try {
-                        const chunk = JSON.parse('"' + rscMatch[1] + '"');
-                        rscChunks.push(chunk);
-                    } catch (e) {
-                        // 单个 chunk 解析失败，跳过
-                    }
-                }
-                if (rscChunks.length > 0) {
-                    const combined = rscChunks.join('');
-                    // 尝试解析为完整 JSON
-                    try {
-                        const data = JSON.parse(combined);
-                        const msgs = extractMessages(data);
-                        if (msgs.length > 0) return msgs;
-                    } catch (e) {
-                        // 可能不是完整JSON，尝试找其中的 conversation 片段
-                    }
-                    // 尝试用正则从拼接文本中提取消息
-                    const msgMatch = combined.match(/"messages"\s*:\s*(\[[\s\S]*?\])\s*[,}]/);
-                    if (msgMatch) {
-                        try {
-                            const msgs = JSON.parse(msgMatch[1]);
-                            if (Array.isArray(msgs) && msgs.length > 0 && msgs[0].content) {
-                                return msgs.map(m => ({
-                                    role: m.role || 'user',
-                                    content: m.content || '',
-                                    thinking: m.thinking || '',
-                                    type: m.role === 'user' ? 'REQUEST' : 'RESPONSE',
-                                    rawContent: m.content || '',
-                                }));
-                            }
-                        } catch (e) {}
-                    }
-                }
-
-                // 策略2：查找 __NEXT_DATA__ 或 __INITIAL_STATE__ 中的 JSON
-                const patterns = [
-                    /<script[^>]*id="__NEXT_DATA__"[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/i,
-                    /window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?});/,
-                    /window\.__SHARE_DATA__\s*=\s*({[\s\S]*?});/,
-                    /"chatSession"\s*:\s*(\[[\s\S]*?\])/,
-                ];
-
-                for (const pattern of patterns) {
-                    const match = html.match(pattern);
-                    if (match) {
-                        try {
-                            const data = JSON.parse(match[1]);
-                            const msgs = extractMessages(data);
-                            if (msgs.length > 0) return msgs;
-                        } catch (e) {
-                            continue;
-                        }
-                    }
-                }
-
-                // 策略2：查找页面中嵌入的会话数据 JSON
-                const jsonPatterns = [
-                    new RegExp('"messages"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*[,}]'),
-                    /"conversation"\s*:\s*(\{[\s\S]*?"mapping"[\s\S]*?\})\s*[,}]/,
-                ];
-
-                for (const pattern of jsonPatterns) {
-                    const match = html.match(pattern);
-                    if (match) {
-                        try {
-                            const maybeJson = match[1];
-                            const data = JSON.parse(maybeJson);
-                            if (Array.isArray(data) && data.length > 0 && data[0].content) {
-                                return data.map(m => ({
-                                    role: m.role || 'user',
-                                    content: m.content || '',
-                                    thinking: m.thinking || '',
-                                    type: m.role === 'user' ? 'REQUEST' : 'RESPONSE',
-                                    rawContent: m.content || '',
-                                }));
-                            }
-                        } catch (e) {
-                            continue;
-                        }
-                    }
-                }
-
-                return [];
-            }
-
-            function extractMessages(data) {
-                // 尝试从各种数据结构中提取消息
-                const messages = [];
-
-                const findMessages = (obj, depth) => {
-                    if (!obj || typeof obj !== 'object' || depth > 10) return;
-                    if (Array.isArray(obj)) {
-                        for (const item of obj) {
-                            if (item && typeof item === 'object') {
-                                if (item.role && item.content) {
-                                    messages.push({
-                                        role: item.role === 'assistant' ? 'assistant' : 'user',
-                                        content: item.content,
-                                        thinking: item.thinking || '',
-                                        type: item.role === 'user' ? 'REQUEST' : 'RESPONSE',
-                                        rawContent: item.content,
-                                    });
-                                } else {
-                                    findMessages(item, depth + 1);
-                                }
-                            }
-                        }
-                    } else {
-                        for (const key of Object.keys(obj)) {
-                            findMessages(obj[key], depth + 1);
-                        }
-                    }
-                };
-
-                findMessages(data, 0);
-
-                // 去重（按内容）
-                const seen = new Set();
-                return messages.filter(m => {
-                    const key = m.content.slice(0, 100);
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                });
             }
 
             async function fetchShareLink() {
@@ -1693,59 +1535,45 @@ onclick="const ta=document.getElementById('compressPromptFree');ta.select();docu
                 btnFetchShare.textContent = '⏳ 加载中...';
 
                 try {
-                    // 尝试直接 fetch（部分环境可能不被 CORS 限制）
-                    let html;
-                    try {
-                        const directResp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-                        if (directResp.ok) {
-                            html = await directResp.text();
-                        } else {
-                            throw new Error('Direct fetch failed');
-                        }
-                    } catch (directErr) {
-                        // CORS blocked，走代理
-                        showShareStatus('直连被拦截，通过代理拉取...', false);
-                        html = await fetchWithProxy(url, 0);
-                    }
+                    const apiUrl = '/api/ds-share?share_id=' + encodeURIComponent(token);
+                    const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
+                    if (!resp.ok) throw new Error('服务器返回 ' + resp.status);
 
-                    if (!html || html.length < 200) {
-                        throw new Error('拉取内容为空');
-                    }
+                    const json = await resp.json();
+                    if (json.code !== 0) throw new Error('API 错误: ' + (json.msg || '未知'));
+                    const bizData = json.data && json.data.biz_data;
+                    if (!bizData || !bizData.messages) throw new Error('响应中没有对话数据');
 
-                    showShareStatus('正在解析对话内容...', false);
+                    showShareStatus('正在解析 ' + bizData.messages.length + ' 条消息...', false);
 
-                    const messages = parseShareHTML(html, token);
+                    // 转换 DeepSeek API 格式到工具内部格式
+                    const messages = bizData.messages.map(m => ({
+                        role: m.role === 'USER' ? 'user' : 'assistant',
+                        content: m.content || '',
+                        thinking: m.thinking_content || '',
+                        type: m.role === 'USER' ? 'REQUEST' : 'RESPONSE',
+                        rawContent: m.content || '',
+                    }));
 
                     if (messages.length === 0) {
-                        // 最后尝试：看看HTML里有没有可识别的文本
-                        const textMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-                        const bodyText = textMatch ? textMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
-                        if (bodyText.length > 100) {
-                            showShareStatus('未能解析对话结构，请尝试直接上传 conversations.json 文件', true);
-                        } else {
-                            showShareStatus('拉取到的页面为空或已被删除，请检查链接是否有效', true);
-                        }
-                        btnFetchShare.disabled = false;
-                        btnFetchShare.textContent = '⬇️ 导入';
-                        return;
+                        throw new Error('对话内容为空');
                     }
 
-                    // 封装成和上传文件一样的格式
+                    const title = bizData.title || ('分享会话 · ' + token.slice(0, 8));
+
                     const session = {
                         id: 'share_' + token,
-                        title: '分享会话 · ' + token.slice(0, 8),
+                        title: title,
                         messages: messages,
                         created_at: Date.now(),
                     };
 
-                    // 复用现有渲染管线：把 session 放进 allSessions
                     allSessions = [session];
                     rawFileSize = JSON.stringify(messages).length;
                     sessionCheckboxes.clear();
 
-                    // 渲染界面
                     uploadZone.innerHTML =
-                        '<span style="font-size:2rem;">✅</span><span class="upload-text">已导入分享链接</span><span class="upload-hint">共 ' + messages.length + ' 条消息 · 点击重新选择文件可更换</span>';
+                        '<span style="font-size:2rem;">✅</span><span class="upload-text">已导入分享链接</span><span class="upload-hint">' + title + ' · 共 ' + messages.length + ' 条消息</span>';
 
                     renderAll();
 
