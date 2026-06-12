@@ -1561,10 +1561,26 @@ onclick="const ta=document.getElementById('compressPromptFree');ta.select();docu
 
                     const title = bizData.title || ('分享会话 · ' + token.slice(0, 8));
 
+                    // 计算 stats + 字符数（和 processFile 保持一致的格式）
+                    const rawCharCount = messages.reduce((sum, m) => sum + (m.rawContent || m.content || '').length, 0);
+                    const cleanedCharCount = rawCharCount; // 分享导入不做清洗，原始=清洗后
+                    let stats = { lengthCat: '短', hasDecision: false, hasCode: false, charCount: rawCharCount, categories: ['casual'] };
+                    if (optClassify.checked) {
+                        stats = classifySession(messages);
+                    } else {
+                        if (rawCharCount < 800) stats.lengthCat = '短';
+                        else if (rawCharCount < 2000) stats.lengthCat = '中';
+                        else stats.lengthCat = '长';
+                    }
+
                     const session = {
                         id: 'share_' + token,
                         title: title,
                         messages: messages,
+                        rawMessages: messages,
+                        stats: stats,
+                        rawCharCount: rawCharCount,
+                        cleanedCharCount: cleanedCharCount,
                         created_at: Date.now(),
                     };
 
