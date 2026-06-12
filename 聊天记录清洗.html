@@ -572,9 +572,9 @@
                     复制下方 Prompt，粘贴到 DeepSeek 对话框开头，即可压缩历史对话上下文
                 </div>
                 <textarea id="compressPromptFree" readonly style="width:100%;height:160px;font-size:0.78rem;font-family:monospace;resize:vertical;cursor:pointer;"
-onclick="this.select();document.execCommand('copy');showToast('✅ Prompt 已复制到剪贴板')"># 上下文压缩指令 · SOUL + MEMORY 格式
+onclick="this.select();document.execCommand('copy');showToast('✅ Prompt 已复制到剪贴板')"># 上下文压缩指令 · SOUL + USER + World Bible + MEMORY 格式
 
-请将以下对话历史压缩为 **SOUL（角色与行为规则）+ MEMORY（持久记忆）** 两层结构化摘要。
+请将以下对话历史压缩为 **SOUL（角色规则）+ USER（用户画像）+ World Bible（世界观）+ MEMORY（持久记忆）** 四层结构化摘要。
 压缩后的输出应可直接用作继续对话的「系统提示词 + 记忆块」。
 
 ## 压缩原则
@@ -584,7 +584,7 @@ onclick="this.select();document.execCommand('copy');showToast('✅ Prompt 已复
 4. **精炼**：每条信息一行，用最少的字说清一件事。不要复述对话过程，只提取「记住什么」
 
 ## 输出格式
-严格按照以下结构输出。开头固定输出使用说明，然后是 SOUL 和 MEMORY。
+严格按照以下结构输出。开头固定输出使用说明，然后是 SOUL、USER、World Bible、MEMORY。
 
 ---
 
@@ -592,9 +592,11 @@ onclick="this.select();document.execCommand('copy');showToast('✅ Prompt 已复
 > 
 > 以下是从历史对话中提取的结构化记忆。直接粘贴到新对话开头即可：
 > - **SOUL** = 你（AI）的角色设定、语气、行为规则 → 相当于系统提示词，告诉 AI「你是谁、怎么说话」
+> - **USER** = 对话对象的画像 → 用户的身份、性格、背景、说话风格
+> - **World Bible** = 虚构世界的设定 → 只有角色扮演/虚构场景才需要填写，日常对话此项可省略
 > - **MEMORY** = 需要记住的事实 → 用户信息、项目背景、偏好、待办，告诉 AI「记住什么」
 > 
-> 粘贴后直接开始新对话，AI 会按 SOUL 的规则表现、用 MEMORY 的内容回答。
+> 粘贴后直接开始新对话，AI 会按 SOUL 的规则表现、理解 USER 是谁、用 MEMORY 的内容回答。
 
 ---
 
@@ -610,6 +612,34 @@ onclick="this.select();document.execCommand('copy');showToast('✅ Prompt 已复
 - **称呼**：[用户的名字/昵称/角色称呼]
 
 > 以上各项通过对话中的明确指令或持续互动模式推断。没有体现的项可省略，不要编造。
+
+---
+
+## USER（用户画像）
+
+> 记录对话对象（用户）的画像——身份、性格、背景、说话方式。
+
+- **身份**：[年龄、职业、角色定位等基本信息]
+- **性格**：[核心性格关键词，2-4 个]
+- **说话风格**：[用户的语言习惯——如简洁/跳跃/幽默/严肃/喜欢反问]
+- **偏好与禁忌**：[讨厌什么话题、不喜欢什么表达方式、有什么特别在意的事]
+- **当前状态**：[生活阶段、心情、正在面临的问题等]
+
+> 从对话中用户的表达方式和内容推断。没有足够信息的项可省略，不要编造。日常对话中此项通常可以写实；角色扮演中则写用户扮演的角色设定。
+
+---
+
+## World Bible（世界观）
+
+> [可选] 仅在角色扮演/虚构场景时填写。记录共享的虚构世界设定。
+
+- **世界观**：[虚构世界的基本规则——时代背景、超自然元素、社会结构等]
+- **场景/地点**：[当前故事发生的具体场景]
+- **剧情节点**：[已发生的重大事件、当前剧情进度]
+- **角色关系**：[用户角色与 AI 角色之间的关系、其他 NPC]
+- **世界规则**：[这个虚构世界中的特殊规则——如魔法体系、科技水平、生物设定]
+
+> 如果对话纯属日常、技术、咨询等非虚构场景，此项写「N/A：非虚构对话」并省略后续内容。
 
 ---
 
@@ -638,11 +668,11 @@ onclick="this.select();document.execCommand('copy');showToast('✅ Prompt 已复
 ---
 
 ## 按对话类型补充重点
-对话涉及以下类型时，SOUL/MEMORY 中优先提取对应的信息：
-- 🎭 角色扮演 → SOUL 中重点写人设/世界观/剧情节点；MEMORY 写角色关系变化
+对话涉及以下类型时，各层中优先提取对应的信息：
+- 🎭 角色扮演 → SOUL 重点写人设/行为规则；USER 写用户扮演的角色；World Bible 完整写世界观/剧情；MEMORY 写角色关系变化
 - ✍️ 创意写作 → MEMORY 写大纲/人物设定/文风偏好
 - 📚 学习辅导 → MEMORY 写核心概念/解题思路/易错点
-- 💔 情感倾诉 → SOUL 写回应风格；MEMORY 写核心困扰/已给建议
+- 💔 情感倾诉 → SOUL 写回应风格；USER 写用户的情感状态/困扰
 - 💻 技术开发 → MEMORY 写代码/配置/报错修复/文件路径
 - 🎯 决策咨询 → MEMORY 写选项对比/最终选择/理由
 
