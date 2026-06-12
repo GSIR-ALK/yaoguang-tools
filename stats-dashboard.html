@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>摇光工具库 · 流量看板</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --card-bg: #1a1d28;
+            --text: #e8eaed;
+            --text-secondary: #9aa0b4;
+            --border: #2d3140;
+            --accent: #6b8aff;
+            --green: #22c55e;
+            --orange: #f59e0b;
+            --red: #ef4444;
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f5f6f8;
+                --card-bg: #ffffff;
+                --text: #1a1a2e;
+                --text-secondary: #5a5d6e;
+                --border: #e2e5ea;
+                --accent: #4f6ef7;
+            }
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            transition: background .2s, color .2s;
+        }
+        .container { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 0; flex-wrap: wrap; gap: 8px;
+        }
+        header h1 {
+            font-size: 1.4rem; font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        header .nav a {
+            color: var(--text-secondary); text-decoration: none; font-size: 0.82rem;
+            padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+        }
+        header .nav a:hover { border-color: var(--accent); color: var(--accent); }
+        header .updated { font-size: 0.72rem; color: var(--text-secondary); }
+
+        .kpi-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;
+        }
+        .kpi-card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 16px; text-align: center;
+        }
+        .kpi-card .value { font-size: 1.8rem; font-weight: 700; }
+        .kpi-card .label { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+        }
+        .card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-secondary); font-weight: 500; font-size: 0.78rem; }
+        .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; margin-right: 6px; }
+
+        .chart-bar {
+            display: flex; align-items: flex-end; gap: 3px; height: 120px; padding-top: 8px;
+        }
+        .chart-bar .col {
+            flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+        }
+        .chart-bar .col .bar-fill {
+            width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 4px;
+            transition: height .3s;
+        }
+        .chart-bar .col .bar-label {
+            font-size: 0.6rem; color: var(--text-secondary); transform: rotate(-45deg); white-space: nowrap;
+        }
+
+        .ip-list { font-size: 0.8rem; }
+        .ip-list span { display: inline-block; margin: 2px 6px; }
+        .ip-list .count { color: var(--accent); font-weight: 600; }
+
+        .empty { text-align: center; padding: 32px; color: var(--text-secondary); }
+
+        @media (max-width: 640px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div>
+            <h1>📊 摇光工具库 · 流量看板</h1>
+            <div class="updated" id="updateTime">加载中...</div>
+        </div>
+        <div class="nav">
+            <a href="/tools/">← 工具库</a>
+        </div>
+    </header>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="card">
+        <h2>📈 各工具访问量</h2>
+        <table id="toolTable"><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+        <h2>📅 今日时段分布</h2>
+        <div class="chart-bar" id="hourlyChart"></div>
+    </div>
+
+    <div class="card">
+        <h2>🌍 今日访问地区分布</h2>
+        <div class="chart-bar" id="regionChart" style="height:80px;"></div>
+        <div id="regionList" style="margin-top:8px;font-size:0.8rem;"></div>
+    </div>
+
+    <div class="card">
+        <h2>👥 今日活跃 IP</h2>
+        <div class="ip-list" id="ipList"></div>
+    </div>
+
+    <div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.72rem;">
+        数据每5分钟自动刷新 · 仅统计 /tools/ 路径 · 过滤静态资源
+    </div>
+</div>
+
+<script>
+async function loadData() {
+    try {
+        const resp = await fetch('data.json?t=' + Date.now());
+        const data = await resp.json();
+        render(data);
+    } catch(e) {
+        document.getElementById('updateTime').textContent = '加载失败: ' + e.message;
+    }
+}
+
+function render(data) {
+    document.getElementById('updateTime').textContent = '更新于 ' + data.updated;
+
+    // KPI
+    document.getElementById('kpiGrid').innerHTML = `
+        <div class="kpi-card"><div class="value" style="color:var(--accent)">${data.overview.today_pv}</div><div class="label">📈 今日 PV</div></div>
+        <div class="kpi-card"><div class="value" style="color:var(--green)">${data.overview.today_uv}</div><div class="label">👤 今日 UV</div></div>
+        <div class="kpi-card"><div class="value">${data.overview.total_pv}</div><div class="label">📊 累计 PV</div></div>
+        <div class="kpi-card"><div class="value">${data.overview.total_uv}</div><div class="label">🌍 累计 UV</div></div>
+    `;
+
+    // Tool table
+    const maxTotal = Math.max(1, ...data.tools.map(t => t.total));
+    document.getElementById('toolTable').innerHTML = data.tools.map(t => `
+        <tr>
+            <td>${t.name}</td>
+            <td><span class="bar" style="width:${(t.total/maxTotal*150).toFixed(0)}px"></span>${t.total}</td>
+            <td>${t.today}</td>
+            <td>${t.yesterday}</td>
+            <td>${t.uv}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="5" class="empty">暂无数据</td></tr>';
+
+    // Hourly chart
+    const maxHour = Math.max(1, ...data.hourly.map(h => h.total));
+    document.getElementById('hourlyChart').innerHTML = data.hourly.map(h => `
+        <div class="col">
+            <div class="bar-fill" style="height:${(h.total/maxHour*100).toFixed(0)}px" title="${h.hour}: ${h.total}次"></div>
+            <div class="bar-label">${h.hour}</div>
+        </div>
+    `).join('') || '<div class="empty">暂无数据</div>';
+
+    // IP list
+    document.getElementById('ipList').innerHTML = data.top_ips.map(ip =>
+        `<span>${ip.ip}${ip.region ? ' (' + ip.region + ')' : ''} <span class="count">×${ip.count}</span></span>`
+    ).join('') || '<div class="empty">暂无数据</div>';
+
+    // Region chart
+    const maxRegion = Math.max(1, ...(data.regions || []).map(r => r.count));
+    document.getElementById('regionChart').innerHTML = (data.regions || []).map(r => `
+        <div class="col">
+            <div class="bar-fill" style="height:${(r.count/maxRegion*60).toFixed(0)}px" title="${r.name}: ${r.count}次"></div>
+            <div class="bar-label">${r.name.length > 3 ? r.name.slice(0,3)+'…' : r.name}</div>
+        </div>
+    `).join('') || '<div class="empty">暂无数据</div>';
+    document.getElementById('regionList').innerHTML = (data.regions || []).map(r =>
+        `<span style="margin-right:12px;">${r.name} <strong style="color:var(--accent)">${r.count}</strong></span>`
+    ).join('');
+}
+
+loadData();
+setInterval(loadData, 300000); // refresh every 5 min
+</script>
+</body>
+</html>
