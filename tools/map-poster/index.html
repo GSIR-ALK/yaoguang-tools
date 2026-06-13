@@ -709,17 +709,17 @@
         <h3>⚙️ 海报设置</h3>
         <label>瓦片地图源</label>
         <select id="tileSourceSelect">
-            <option value="carto-light">Carto 浅色（推荐）</option>
-            <option value="carto-dark">Carto 暗色</option>
-            <option value="osm">OpenStreetMap 标准</option>
-            <option value="arcgis">ArcGIS 卫星混合</option>
-            <option value="tdt-vec">天地图 矢量街道</option>
-            <option value="tdt-img">天地图 卫星影像</option>
+            <option value="zjucvg">浙大OSM教育镜像（MVT矢量）</option>
+            <option value="aliyun">阿里云 OSM 开源镜像（MVT矢量）</option>
+            <option value="osm-cn">OSM 中国社区镜像（MVT矢量）</option>
+            <option value="carto-light">Carto 浅色（栅格兜底）</option>
+            <option value="carto-dark">Carto 暗色（栅格兜底）</option>
+            <option value="osm">OpenStreetMap 标准（栅格兜底）</option>
             <option value="custom">自定义 URL</option>
         </select>
         <div id="customTileInput" style="display:none;">
             <label>自定义瓦片 URL 模板（{z}/{x}/{y} 占位）</label>
-            <input type="text" id="customTileUrl" placeholder="https://tile.example.com/{z}/{x}/{y}.png" />
+            <input type="text" id="customTileUrl" placeholder="https://tile.example.com/{z}/{x}/{y}.mvt" />
         </div>
         <label>导出 DPI</label>
         <select id="exportDpi">
@@ -769,16 +769,20 @@
                 defaultZoom: 13,
                 minZoom: 8,
                 maxZoom: 18,
-                // 瓦片源
+                // 瓦片源（MVT 矢量 + 栅格兜底）
                 tileSources: {
+                    // --- MVT 矢量瓦片（国内可用免费公共源） ---
+                    'zjucvg': 'https://osm.zjucvg.net/vector/v1/{z}/{x}/{y}.mvt',
+                    'aliyun': 'https://tiles.aliyun.com/osm/vector/{z}/{x}/{y}.mvt',
+                    'osm-cn': 'https://tile.openstreetmap.cn/vector/{z}/{x}/{y}.mvt',
+                    // --- 栅格瓦片兜底 ---
                     'carto-light': 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
                     'carto-dark': 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                     'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    'arcgis': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    'tdt-vec': '/api/tdt/vec_w/{z}/{x}/{y}.png',
-                    'tdt-img': '/api/tdt/img_w/{z}/{x}/{y}.png',
                 },
-                tileSource: 'tdt-vec',
+                // MVT 矢量源列表（用于判断当前源类型）
+                vectorTileSources: ['zjucvg', 'aliyun', 'osm-cn'],
+                tileSource: 'zjucvg',
                 // 地理编码（走服务器代理）
                 geocodeUrl: '/api/geocode',
                 // 城市缓存
@@ -1220,6 +1224,12 @@
             }
 
             // ==================== 地图核心层 ====================
+
+            function isVectorSource() {
+                return CONFIG.vectorTileSources.indexOf(CONFIG.tileSource) !== -1 ||
+                    (CONFIG.tileSource === 'custom' && CONFIG.customTileUrl.includes('.mvt'));
+            }
+
             function getTileUrl() {
                 if (CONFIG.tileSource === 'custom') {
                     return CONFIG.customTileUrl.includes('{z}') ? CONFIG.customTileUrl : null;
@@ -1227,7 +1237,284 @@
                 return CONFIG.tileSources[CONFIG.tileSource] || null;
             }
 
-            function buildMapStyle(tileUrl, mapFilter, bgColor) {
+            // ========== MVT 矢量图层样式 ==========
+            // OpenMapTiles 标准 schema 的矢量风格定义
+            function buildVectorStyle(tileUrl, themeId) {
+                if (!tileUrl) return null;
+                const theme = THEMES[themeId] || THEMES['dark-minimal'];
+                // 用主题色衍生矢量图层配色
+                const isDark = isDarkTheme(theme);
+                const colors = getVectorColors(theme);
+                const glyphsUrl = 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf';
+                return {
+                    version: 8,
+                    name: 'MapPoster Vector',
+                    sources: {
+                        'osm-vector': {
+                            type: 'vector',
+                            tiles: [tileUrl],
+                            attribution: '© OpenStreetMap contributors',
+                            maxzoom: 16,
+                            minzoom: 4,
+                        },
+                    },
+                    glyphs: glyphsUrl,
+                    layers: buildVectorLayers(colors, isDark),
+                };
+            }
+
+            function isDarkTheme(theme) {
+                const bg = (theme.posterBg || '#1a1d23').toLowerCase();
+                const r = parseInt(bg.slice(1,3), 16);
+                const g = parseInt(bg.slice(3,5), 16);
+                const b = parseInt(bg.slice(5,7), 16);
+                return (r*299 + g*587 + b*114) / 1000 < 128;
+            }
+
+            // 从主题色衍生矢量图层配色
+            function getVectorColors(theme) {
+                const bg = theme.posterBg || '#1a1d23';
+                const isDark = isDarkTheme(theme);
+                return {
+                    background: bg,
+                    water: theme.waterColor || (isDark ? '#1a2b3c' : '#c8dce8'),
+                    landuse: theme.landuseColor || (isDark ? '#23282e' : '#e8e8e0'),
+                    landcover: theme.landcoverColor || (isDark ? '#1e2628' : '#eef0e8'),
+                    // 道路分级
+                    motorway: theme.roadMainColor || (isDark ? '#ffffff' : '#553322'),
+                    trunk: theme.roadMainColor || (isDark ? '#f0f0f0' : '#664433'),
+                    primary: theme.roadSecondaryColor || (isDark ? '#e0e0e0' : '#887766'),
+                    secondary: theme.roadSecondaryColor || (isDark ? '#b0b0b0' : '#a09080'),
+                    tertiary: theme.roadTertiaryColor || (isDark ? '#707070' : '#bbaa99'),
+                    street: theme.roadTertiaryColor || (isDark ? '#505050' : '#ccbbaa'),
+                    // 建筑物
+                    building: theme.buildingColor || (isDark ? '#2a2e36' : '#d4c8b8'),
+                    buildingOutline: theme.buildingOutlineColor || (isDark ? '#3a3e46' : '#bbb0a0'),
+                    // 文字标签
+                    placeLabel: theme.placeLabelColor || (isDark ? '#ffffff' : '#333333'),
+                    placeLabelHalo: bg,
+                    // 边界
+                    boundary: theme.boundaryColor || (isDark ? '#3a4050' : '#c0b8a8'),
+                };
+            }
+
+            // 矢量子图层构建（OpenMapTiles schema）
+            function buildVectorLayers(c, isDark) {
+                return [
+                    // 1. 背景
+                    { id: 'background', type: 'background', paint: { 'background-color': c.background } },
+
+                    // 2. 土地覆盖（森林、草地等）
+                    { id: 'landcover', source: 'osm-vector', 'source-layer': 'landcover',
+                      filter: ['any', ['==', 'class', 'wood'], ['==', 'class', 'grass'], ['==', 'class', 'scrub'], ['==', 'class', 'crop']],
+                      type: 'fill', paint: { 'fill-color': c.landcover, 'fill-opacity': 0.6 } },
+
+                    // 3. 土地利用（公园、绿地等）
+                    { id: 'landuse', source: 'osm-vector', 'source-layer': 'landuse',
+                      filter: ['any', ['==', 'class', 'park'], ['==', 'class', 'residential'], ['==', 'class', 'commercial'], ['==', 'class', 'industrial']],
+                      type: 'fill', paint: { 'fill-color': c.landuse, 'fill-opacity': 0.5 } },
+
+                    // 4. 水域
+                    { id: 'water', source: 'osm-vector', 'source-layer': 'water',
+                      type: 'fill', paint: { 'fill-color': c.water, 'fill-opacity': 0.7 } },
+
+                    // 5. 水系线（河流、溪流）
+                    { id: 'waterway', source: 'osm-vector', 'source-layer': 'waterway',
+                      type: 'line', paint: { 'line-color': c.water, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.3, 14, 1.0] } },
+
+                    // 6. 建筑物
+                    { id: 'building', source: 'osm-vector', 'source-layer': 'building',
+                      type: 'fill', paint: { 'fill-color': c.building, 'fill-opacity': 0.5 },
+                      filter: ['!=', 'underground', 'true'] },
+
+                    // 7. 机场
+                    { id: 'aeroway-fill', source: 'osm-vector', 'source-layer': 'aeroway',
+                      filter: ['==', '$type', 'Polygon'],
+                      type: 'fill', paint: { 'fill-color': c.building, 'fill-opacity': 0.3 } },
+                    { id: 'aeroway-line', source: 'osm-vector', 'source-layer': 'aeroway',
+                      filter: ['==', '$type', 'LineString'],
+                      type: 'line', paint: { 'line-color': c.water, 'line-width': 0.5, 'line-dasharray': [2, 2] } },
+
+                    // ====== 道路交通 ======
+                    // 高速公路（最上层道路）
+                    { id: 'road-motorway', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['in', 'class', 'motorway', 'motorway_link'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.motorway,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 12, 1.2, 14, 2.5, 16, 4.5],
+                          'line-opacity': 0.85,
+                      },
+                      layout: { 'line-cap': 'round', 'line-join': 'round' } },
+
+                    // 主干道
+                    { id: 'road-trunk', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['in', 'class', 'trunk', 'trunk_link'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.trunk,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 12, 1.0, 14, 2.0, 16, 3.5],
+                          'line-opacity': 0.80,
+                      },
+                      layout: { 'line-cap': 'round', 'line-join': 'round' } },
+
+                    // 国道/一级道路
+                    { id: 'road-primary', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['in', 'class', 'primary', 'primary_link'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.primary,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.4, 12, 0.8, 14, 1.5, 16, 2.8],
+                          'line-opacity': 0.75,
+                      },
+                      layout: { 'line-cap': 'round', 'line-join': 'round' } },
+
+                    // 省道/二级道路
+                    { id: 'road-secondary', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['in', 'class', 'secondary', 'secondary_link'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.secondary,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.3, 12, 0.6, 14, 1.2, 16, 2.2],
+                          'line-opacity': 0.65,
+                      },
+                      layout: { 'line-cap': 'round', 'line-join': 'round' } },
+
+                    // 三级道路
+                    { id: 'road-tertiary', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['in', 'class', 'tertiary', 'tertiary_link'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.tertiary,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.3, 14, 0.8, 16, 1.5],
+                          'line-opacity': 0.55,
+                      },
+                      layout: { 'line-cap': 'round', 'line-join': 'round' } },
+
+                    // 一般街道
+                    { id: 'road-street', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['==', 'class', 'street'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.street,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.2, 14, 0.5, 16, 1.0],
+                          'line-opacity': 0.45,
+                      },
+                      layout: { 'line-cap': 'round', 'line-join': 'round' } },
+
+                    // 人行道/小径
+                    { id: 'road-path', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['in', 'class', 'path', 'track', 'footway', 'cycleway'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.street,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.2, 16, 0.6],
+                          'line-opacity': 0.25,
+                          'line-dasharray': [1, 2],
+                      } },
+
+                    // 铁路
+                    { id: 'road-rail', source: 'osm-vector', 'source-layer': 'transportation',
+                      filter: ['==', 'class', 'rail'],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.street,
+                          'line-width': 0.3,
+                          'line-opacity': 0.3,
+                          'line-dasharray': [4, 4],
+                      } },
+
+                    // ====== 边界 ======
+                    { id: 'boundary', source: 'osm-vector', 'source-layer': 'boundary',
+                      filter: ['==', 'admin_level', 2],
+                      type: 'line',
+                      paint: {
+                          'line-color': c.boundary,
+                          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 12, 0.8],
+                          'line-opacity': 0.5,
+                          'line-dasharray': [3, 3],
+                      } },
+
+                    // ====== 地名标注 ======
+                    // 城市名
+                    { id: 'place-city', source: 'osm-vector', 'source-layer': 'place',
+                      filter: ['==', 'class', 'city'],
+                      type: 'symbol',
+                      layout: {
+                          'text-field': '{name}',
+                          'text-font': ['Noto Sans CJK SC Regular', 'Open Sans Regular'],
+                          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 12, 14, 14, 18],
+                          'text-allow-overlap': false,
+                          'text-ignore-placement': false,
+                          'text-anchor': 'center',
+                          'text-offset': [0, 0],
+                      },
+                      paint: {
+                          'text-color': c.placeLabel,
+                          'text-halo-color': c.placeLabelHalo,
+                          'text-halo-width': 1.5,
+                          'text-opacity': 0.85,
+                      } },
+
+                    // 城镇名
+                    { id: 'place-town', source: 'osm-vector', 'source-layer': 'place',
+                      filter: ['==', 'class', 'town'],
+                      type: 'symbol',
+                      layout: {
+                          'text-field': '{name}',
+                          'text-font': ['Noto Sans CJK SC Regular', 'Open Sans Regular'],
+                          'text-size': ['interpolate', ['linear'], ['zoom'], 10, 9, 14, 13],
+                          'text-allow-overlap': false,
+                          'text-ignore-placement': false,
+                          'text-anchor': 'center',
+                      },
+                      paint: {
+                          'text-color': c.placeLabel,
+                          'text-halo-color': c.placeLabelHalo,
+                          'text-halo-width': 1.2,
+                          'text-opacity': 0.65,
+                      } },
+
+                    // 村庄/郊区名
+                    { id: 'place-village', source: 'osm-vector', 'source-layer': 'place',
+                      filter: ['==', 'class', 'village'],
+                      type: 'symbol',
+                      layout: {
+                          'text-field': '{name}',
+                          'text-font': ['Noto Sans CJK SC Regular', 'Open Sans Regular'],
+                          'text-size': ['interpolate', ['linear'], ['zoom'], 12, 8, 16, 11],
+                          'text-allow-overlap': false,
+                          'text-ignore-placement': false,
+                          'text-anchor': 'center',
+                      },
+                      paint: {
+                          'text-color': c.placeLabel,
+                          'text-halo-color': c.placeLabelHalo,
+                          'text-halo-width': 1,
+                          'text-opacity': 0.45,
+                      } },
+
+                    // 水系标注
+                    { id: 'water-label', source: 'osm-vector', 'source-layer': 'water_name',
+                      type: 'symbol',
+                      layout: {
+                          'text-field': '{name}',
+                          'text-font': ['Noto Sans CJK SC Regular', 'Open Sans Regular'],
+                          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 8, 14, 12],
+                          'text-allow-overlap': false,
+                          'text-ignore-placement': false,
+                      },
+                      paint: {
+                          'text-color': c.water,
+                          'text-halo-color': c.placeLabelHalo,
+                          'text-halo-width': 1,
+                          'text-opacity': 0.5,
+                      } },
+                ];
+            }
+
+            // ========== 栅格风格 ==========
+            function buildRasterStyle(tileUrl) {
                 if (!tileUrl) return null;
                 return {
                     version: 8,
@@ -1244,42 +1531,17 @@
                         id: 'osm-raster-layer',
                         type: 'raster',
                         source: 'osm-raster',
-                        paint: {
-                            'raster-opacity': 1,
-                            'raster-resampling': 'linear',
-                            'raster-contrast': mapFilter && mapFilter !== 'none' ? 0 : 0,
-                            'raster-saturation': mapFilter && mapFilter !== 'none' ? 0 : 0,
-                        },
+                        paint: { 'raster-opacity': 1, 'raster-resampling': 'linear' },
                     }],
-                    // CSS filter for the map canvas
-                    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
-                    metadata: { 'mapfilter': mapFilter || '' },
                 };
             }
 
             function getMapStyle() {
                 const tileUrl = getTileUrl();
-                return {
-                    version: 8,
-                    sources: {
-                        'osm-raster': {
-                            type: 'raster',
-                            tiles: [tileUrl],
-                            tileSize: 256,
-                            attribution: '© OpenStreetMap contributors | © CartoDB',
-                            maxzoom: 19,
-                        },
-                    },
-                    layers: [{
-                        id: 'osm-raster-layer',
-                        type: 'raster',
-                        source: 'osm-raster',
-                        paint: {
-                            'raster-opacity': 1,
-                            'raster-resampling': 'linear',
-                        },
-                    }],
-                };
+                if (isVectorSource()) {
+                    return buildVectorStyle(tileUrl, STATE.currentTheme);
+                }
+                return buildRasterStyle(tileUrl);
             }
 
             function destroyMap() {
@@ -1320,7 +1582,13 @@
             async function initMap(center, radiusKm) {
                 destroyMap();
 
-                const zoom = kmToZoom(radiusKm, center[1]);
+                const isVector = isVectorSource();
+                // 矢量瓦片 zoom 上限比栅格低
+                const maxZoomVal = isVector ? 15 : 18;
+                const zoom = Math.min(
+                    kmToZoom(radiusKm, center[1]),
+                    maxZoomVal
+                );
                 const style = getMapStyle();
 
                 return new Promise((resolve, reject) => {
