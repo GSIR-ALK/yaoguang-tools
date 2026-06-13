@@ -1957,9 +1957,11 @@
                     if (loaded) console.log('[Font] 中文字体预加载完成');
                 });
 
-                // 检查WebGL支持
+                // 检查WebGL支持（手动检测，maplibre v4 移除了 .supported()）
                 try {
-                    if (!maplibregl.supported()) {
+                    var _glTestCanvas = document.createElement('canvas');
+                    var _gl = _glTestCanvas.getContext('webgl') || _glTestCanvas.getContext('webgl2');
+                    if (!_gl) {
                         setStatus('error', '⚠️ 您的浏览器不支持WebGL，地图无法渲染');
                         showToast('⚠️ 浏览器不支持WebGL，请使用现代浏览器', 'error');
                         return;
