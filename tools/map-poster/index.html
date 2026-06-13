@@ -767,7 +767,7 @@
                 defaultZoom: 13,
                 minZoom: 8,
                 maxZoom: 18,
-                // 瓦片源
+                // 瓦片源（浏览器直连——国内用户需自行确保网络可达）
                 tileSources: {
                     'carto-light': 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
                     'carto-dark': 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
@@ -1334,11 +1334,7 @@
                             renderWorldCopies: true,
                             preserveDrawingBuffer: true, // 关键：允许导出canvas
                             transformRequest: (url) => {
-                                // 如果配置了代理前缀且URL不是相对路径，应用代理
-                                if (CONFIG.proxyPrefix && url.startsWith('http') && !url.includes(
-                                        'openstreetmap.org') && !url.includes('cartocdn.com')) {
-                                    return { url: CONFIG.proxyPrefix + encodeURIComponent(url) };
-                                }
+                                // 相对路径直接放行
                                 return { url };
                             },
                         });
@@ -1668,9 +1664,15 @@
                     STATE.map = mapInstance;
                     unlockMapInteraction(mapInstance);
 
-                    // 3. 等待渲染完成
+                    // 3. 等待渲染完成，同时提示可切换瓦片源
                     setStatus('loading', '等待地图渲染完成…');
-                    await waitForMapIdle(mapInstance, 15000);
+                    // 8秒后如果还没渲染完，提示用户可尝试其他瓦片源
+                    const tileTimeout = setTimeout(() => {
+                        setStatus('loading', '⚠️ 地图瓦片加载较慢，可在设置中切换瓦片源');
+                        showToast('⚠️ 当前瓦片源加载慢，点击设置⚙可切换其他源', 'warning');
+                    }, 8000);
+                    await waitForMapIdle(mapInstance, 20000);
+                    clearTimeout(tileTimeout);
 
                     // 4. 完成
                     showMapLoading(false);
@@ -1977,21 +1979,10 @@
                     dom.customTileInput.style.display = this.value === 'custom' ? 'block' : 'none';
                 });
 
-                // 初始加载默认城市（天津）
-                const defaultCity = '天津';
-                dom.cityInput.value = defaultCity;
-                setStatus('loading', '正在初始化…');
-                try {
-                    await generateCityMap(defaultCity);
-                } catch(e) {
-                    console.error('[Init] generateCityMap 未捕获异常:', e);
-                    setStatus('error', '地图加载异常: ' + (e.message || '未知错误'));
-                    showToast('❌ 地图加载异常，请刷新重试', 'error');
-                    return;
-                }
-
-                // 延迟3秒后隐藏提示
-                setTimeout(() => dom.mapHint.classList.add('hidden'), 3000);
+                // 初始状态：展示搜索提示，不自动加载地图
+                setStatus('ok', '🔍 在上方搜索框输入城市名，开始生成地图海报');
+                dom.mapHint.textContent = '🔍 搜索城市开始生成地图 · 支持全国770+城市';
+                dom.mapHint.classList.remove('hidden');
 
                 console.log('[MapPoster] 初始化完成');
                 console.log('[MapPoster] 主题:', Object.keys(THEMES).length, '种可选');
