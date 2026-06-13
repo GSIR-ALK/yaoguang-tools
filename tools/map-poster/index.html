@@ -1,0 +1,2022 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Poster Generator - 地图海报生成器</title>
+
+    <!-- MapLibre GL CSS -->
+    <link rel="stylesheet" href="lib/maplibre-gl.css" />
+    <!-- html2canvas -->
+    <script src="lib/html2canvas.min.js">
+    </script>
+    <!-- MapLibre GL JS -->
+    <script src="lib/maplibre-gl.js">
+    </script>
+    <!-- CDN fallback: if local failed, try unpkg -->
+    <script>
+        (function(){
+            function fallback(src, isCss) {
+                var el = isCss
+                    ? document.querySelector('link[href="lib/maplibre-gl.css"]')
+                    : document.querySelector('script[src="lib/maplibre-gl.js"]');
+                if (!el) return;
+                el.onerror = function(){
+                    var newEl = document.createElement(isCss ? 'link' : 'script');
+                    if (isCss) { newEl.rel = 'stylesheet'; newEl.href = src; }
+                    else { newEl.src = src; }
+                    document.head.appendChild(newEl);
+                };
+                // trigger re-check: if the file is 0 bytes, also fallback
+                if (!isCss && window.maplibregl === undefined) {
+                    el.onerror();
+                }
+            }
+            fallback('https://unpkg.com/maplibre-gl@4.6.0/dist/maplibre-gl.css', true);
+            fallback('https://unpkg.com/maplibre-gl@4.6.0/dist/maplibre-gl.js', false);
+        })();
+    </script>
+
+    <style>
+        :root {
+            --bg: #1a1d23;
+            --panel-bg: #21252b;
+            --text: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --accent: #5c9ce6;
+            --accent-hover: #7ab4f0;
+            --border: #333842;
+            --input-bg: #2a2e36;
+            --danger: #e0556a;
+            --success: #5cb878;
+            --warning: #e0a855;
+            --radius: 10px;
+            --radius-sm: 6px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --transition: 0.2s ease;
+            --font-mono: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ========== 顶部工具栏 ========== */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border);
+            z-index: 10;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            min-height: 52px;
+        }
+        .toolbar .logo {
+            font-weight: 700;
+            font-size: 1rem;
+            color: #fff;
+            white-space: nowrap;
+            letter-spacing: -0.02em;
+            margin-right: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .toolbar .logo span {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .search-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            min-width: 180px;
+            max-width: 360px;
+            position: relative;
+        }
+        .search-wrap input {
+            flex: 1;
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            font-size: 0.9rem;
+            outline: none;
+            transition: var(--transition);
+            min-width: 0;
+        }
+        .search-wrap input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(92, 156, 230, 0.12);
+        }
+        .search-wrap .btn-search {
+            padding: 9px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--accent);
+            background: var(--accent);
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: var(--transition);
+            letter-spacing: 0.01em;
+        }
+        .search-wrap .btn-search:hover {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+        }
+        .search-wrap .btn-search:active {
+            transform: scale(0.96);
+            transition: 0.08s ease;
+        }
+        .search-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 20;
+            display: none;
+            box-shadow: var(--shadow);
+            margin-top: 4px;
+        }
+        .search-suggestions.active {
+            display: block;
+        }
+        .search-suggestions .suggestion-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            transition: var(--transition);
+        }
+        .search-suggestions .suggestion-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        .search-suggestions .suggestion-item .coord {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-left: 8px;
+        }
+        .toolbar .btn-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .toolbar .btn-icon:hover {
+            background: #353a44;
+            border-color: #555;
+        }
+        .toolbar .btn-icon.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+        .toolbar select {
+            padding: 9px 10px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            font-size: 0.85rem;
+            outline: none;
+            cursor: pointer;
+            transition: var(--transition);
+            min-width: 100px;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%23a0a0a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+        }
+        .toolbar .radius-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .toolbar .radius-group input[type="range"] {
+            width: 70px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .toolbar .radius-group .radius-val {
+            font-size: 0.75rem;
+            color: var(--text);
+            font-weight: 600;
+            min-width: 32px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            font-family: var(--font-mono);
+        }
+        .btn-export {
+            padding: 9px 18px;
+            border-radius: var(--radius-sm);
+            border: none;
+            background: var(--success);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            transition: var(--transition);
+            letter-spacing: 0.02em;
+        }
+        .btn-export:hover {
+            filter: brightness(1.12);
+            box-shadow: 0 2px 12px rgba(92, 184, 120, 0.3);
+        }
+        .btn-export:active {
+            transform: scale(0.96);
+            transition: 0.08s ease;
+        }
+        .btn-export:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: none;
+            box-shadow: none;
+            transform: none;
+        }
+        .btn-settings {
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            transition: var(--transition);
+        }
+        .btn-settings:hover {
+            background: #353a44;
+        }
+
+        /* ========== 地图容器 ========== */
+        .map-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #1a1d23;
+            min-height: 0;
+        }
+        .map-container #map {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .map-container .map-loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(26, 29, 35, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .map-container .map-loading-overlay.visible {
+            opacity: 1;
+        }
+        .map-loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.15);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .map-hint {
+            position: absolute;
+            bottom: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: #ccc;
+            font-size: 0.75rem;
+            padding: 6px 14px;
+            border-radius: 20px;
+            z-index: 4;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            letter-spacing: 0.02em;
+        }
+        .map-hint.hidden {
+            opacity: 0;
+        }
+
+        /* ========== 底部状态栏 ========== */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 14px;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border);
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+            min-height: 30px;
+        }
+        .status-bar .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--success);
+            flex-shrink: 0;
+            animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot {
+            0%,
+            100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.4;
+            }
+        }
+        .status-bar .status-dot.warning {
+            background: var(--warning);
+        }
+        .status-bar .status-dot.error {
+            background: var(--danger);
+        }
+
+        /* ========== 设置面板 ========== */
+        .settings-panel {
+            position: fixed;
+            top: 0;
+            right: -420px;
+            width: 400px;
+            max-width: 90vw;
+            height: 100vh;
+            background: var(--panel-bg);
+            border-left: 1px solid var(--border);
+            z-index: 50;
+            transition: right 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
+        }
+        .settings-panel.open {
+            right: 0;
+        }
+        .settings-panel h3 {
+            font-size: 1.05rem;
+            margin-bottom: 16px;
+            color: #fff;
+            letter-spacing: 0.01em;
+        }
+        .settings-panel label {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            margin-top: 12px;
+            letter-spacing: 0.02em;
+        }
+        .settings-panel input[type="text"],
+        .settings-panel textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            font-size: 0.82rem;
+            outline: none;
+            font-family: var(--font-mono);
+            resize: vertical;
+        }
+        .settings-panel input[type="text"]:focus,
+        .settings-panel textarea:focus {
+            border-color: var(--accent);
+        }
+        .settings-panel .btn-close {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: #fff;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+        .settings-panel .btn-close:hover {
+            background: #353a44;
+        }
+        .settings-panel .btn-save-settings {
+            margin-top: 16px;
+            padding: 10px 20px;
+            border-radius: var(--radius-sm);
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: var(--transition);
+            width: 100%;
+        }
+        .settings-panel .btn-save-settings:hover {
+            background: var(--accent-hover);
+        }
+        .settings-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 45;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .settings-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* ========== 导出进度遮罩 ========== */
+        .export-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 60;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 14px;
+            pointer-events: all;
+        }
+        .export-overlay .export-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        .export-overlay .export-text {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.95rem;
+            letter-spacing: 0.02em;
+        }
+        .export-overlay .export-progress {
+            width: 200px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .export-overlay .export-progress-fill {
+            height: 100%;
+            background: #fff;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        /* ========== Toast 提示 ========== */
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            z-index: 70;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            letter-spacing: 0.02em;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(4px);
+        }
+        .toast.error {
+            background: var(--danger);
+        }
+        .toast.success {
+            background: var(--success);
+        }
+
+        /* ========== 响应式 ========== */
+        @media (max-width: 768px) {
+            .toolbar {
+                gap: 6px;
+                padding: 8px 8px;
+                min-height: 44px;
+            }
+            .toolbar .logo {
+                font-size: 0.85rem;
+                gap: 4px;
+            }
+            .toolbar .logo span {
+                width: 7px;
+                height: 7px;
+            }
+            .search-wrap {
+                min-width: 120px;
+                max-width: 200px;
+            }
+            .search-wrap input {
+                font-size: 0.8rem;
+                padding: 7px 8px;
+            }
+            .search-wrap .btn-search {
+                padding: 7px 10px;
+                font-size: 0.75rem;
+            }
+            .toolbar select {
+                font-size: 0.75rem;
+                padding: 7px 8px;
+                min-width: 70px;
+                padding-right: 22px;
+                background-position: right 6px center;
+            }
+            .toolbar .radius-group {
+                font-size: 0.7rem;
+                gap: 3px;
+            }
+            .toolbar .radius-group input[type="range"] {
+                width: 44px;
+            }
+            .btn-export {
+                padding: 7px 12px;
+                font-size: 0.75rem;
+            }
+            .btn-settings {
+                padding: 7px 10px;
+                font-size: 0.75rem;
+            }
+            .map-hint {
+                bottom: 8px;
+                font-size: 0.65rem;
+                padding: 4px 10px;
+            }
+            .status-bar {
+                font-size: 0.65rem;
+                padding: 5px 8px;
+                gap: 6px;
+                min-height: 24px;
+            }
+        }
+        @media (max-width: 480px) {
+            .toolbar {
+                gap: 4px;
+                padding: 6px 5px;
+            }
+            .search-wrap {
+                min-width: 90px;
+                max-width: 150px;
+                gap: 3px;
+            }
+            .search-wrap input {
+                font-size: 0.7rem;
+                padding: 6px;
+            }
+            .search-wrap .btn-search {
+                padding: 6px 8px;
+                font-size: 0.7rem;
+            }
+            .btn-export {
+                padding: 6px 10px;
+                font-size: 0.7rem;
+            }
+            .toolbar .radius-group input[type="range"] {
+                width: 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ==================== 顶部工具栏 ==================== -->
+    <div class="toolbar" id="toolbar">
+        <a href="/tools/" style="color:var(--text-secondary);text-decoration:none;font-size:0.8rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border);transition:.2s;margin-right:4px;"
+           onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)';"
+           onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-secondary)';">← 工具库</a>
+        <div class="logo"><span></span>城市海报</div>
+        <div class="search-wrap" id="searchWrap">
+            <input type="text" id="cityInput" placeholder="输入城市名称…" autocomplete="off" />
+            <button class="btn-search" id="btnSearch" title="搜索城市">🔍 搜索</button>
+            <div class="search-suggestions" id="searchSuggestions"></div>
+        </div>
+        <select id="themeSelect" title="选择主题风格">
+            <option value="dark-minimal">🌙 暗夜极简</option>
+            <option value="moonlight">🌊 月光蓝</option>
+            <option value="cyberpunk">⚡ 赛博朋克</option>
+            <option value="ink-wash">🖌️ 水墨丹青</option>
+            <option value="autumn">🍂 秋日暖阳</option>
+            <option value="forest">🌲 森林绿</option>
+            <option value="custom">🎨 自定义</option>
+        </select>
+        <div class="radius-group">
+            <span>范围</span>
+            <input type="range" id="radiusSlider" min="1" max="20" value="6" step="0.5" title="调整地图视野范围 (km)" />
+            <span class="radius-val" id="radiusVal">6km</span>
+        </div>
+        <button class="btn-export" id="btnExport" title="导出高清海报">📥 导出海报</button>
+        <button class="btn-settings" id="btnSettings" title="设置">⚙️</button>
+    </div>
+
+    <!-- ==================== 地图容器 ==================== -->
+    <div class="map-container" id="mapContainer">
+        <div id="map"></div>
+        <div class="map-loading-overlay" id="mapLoadingOverlay">
+            <div class="map-loading-spinner"></div>
+        </div>
+        <div class="map-hint" id="mapHint">🖱️ 拖拽地图调整中心 · 滚轮缩放 · 点击「导出海报」生成高清图</div>
+    </div>
+
+    <!-- ==================== 底部状态栏 ==================== -->
+    <div class="status-bar" id="statusBar">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">就绪 — 搜索城市开始生成地图海报</span>
+        <span style="margin-left:auto;font-family:var(--font-mono);font-size:0.65rem;" id="statusCoords"></span>
+    </div>
+
+    <!-- ==================== 设置面板 ==================== -->
+    <div class="settings-overlay" id="settingsOverlay"></div>
+    <div class="settings-panel" id="settingsPanel">
+        <button class="btn-close" id="btnCloseSettings">✕</button>
+        <h3>⚙️ 海报设置</h3>
+        <label>瓦片地图源</label>
+        <select id="tileSourceSelect">
+            <option value="carto-light">Carto 浅色（推荐）</option>
+            <option value="carto-dark">Carto 暗色</option>
+            <option value="osm">OpenStreetMap 标准</option>
+            <option value="arcgis">ArcGIS 卫星混合</option>
+            <option value="custom">自定义 URL</option>
+        </select>
+        <div id="customTileInput" style="display:none;">
+            <label>自定义瓦片 URL 模板（{z}/{x}/{y} 占位）</label>
+            <input type="text" id="customTileUrl" placeholder="https://tile.example.com/{z}/{x}/{y}.png" />
+        </div>
+        <label>导出 DPI</label>
+        <select id="exportDpi">
+            <option value="150">150 DPI（轻量）</option>
+            <option value="200">200 DPI（标准）</option>
+            <option value="300" selected>300 DPI（印刷级）</option>
+        </select>
+        <label>导出尺寸预设</label>
+        <select id="exportSize">
+            <option value="a4">A4 竖版 (210×297mm)</option>
+            <option value="a3" selected>A3 竖版 (297×420mm)</option>
+            <option value="16x9">16:9 横版海报</option>
+            <option value="square">方形 1:1</option>
+        </select>
+        <label>海报标题字体大小（相对比例）</label>
+        <input type="range" id="titleFontSize" min="0.5" max="2.5" value="1" step="0.1" style="width:100%;" />
+        <span style="font-size:0.7rem;color:var(--text-secondary);">当前倍率: <strong id="titleFontSizeVal">1.0x</strong></span>
+        <button class="btn-save-settings" id="btnSaveSettings">💾 保存设置</button>
+    </div>
+
+    <!-- ==================== Toast ==================== -->
+    <div class="toast" id="toast"></div>
+
+    <!-- ==================== 导出进度遮罩 ==================== -->
+    <div class="export-overlay" id="exportOverlay" style="display:none;">
+        <div class="export-spinner"></div>
+        <div class="export-text" id="exportText">正在生成高清海报…</div>
+        <div class="export-progress"><div class="export-progress-fill" id="exportProgressFill"></div></div>
+    </div>
+
+    <script>
+        /**
+         * Map Poster Generator — 纯前端地图海报生成器
+         * MIT License · Copyright (c) 2024
+         * 复刻 MapToPoster 核心能力，全配置化主题系统
+         * 依赖: MapLibre GL (MIT), html2canvas (MIT)
+         */
+
+        (function() {
+            'use strict';
+
+            // ==================== 配置层 ====================
+            const CONFIG = {
+                version: '1.0.0',
+                // 默认地图中心（北京）
+                defaultCenter: [116.4074, 39.9042],
+                defaultZoom: 13,
+                minZoom: 8,
+                maxZoom: 18,
+                // 瓦片源
+                tileSources: {
+                    'carto-light': 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                    'carto-dark': 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                    'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    'arcgis': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                },
+                tileSource: 'osm',
+                // 地理编码（走服务器代理）
+                geocodeUrl: '/api/geocode',
+                // 城市缓存
+                citiesUrl: '/tools/map-poster/cities.json',
+                // 导出配置
+                exportDpi: 300,
+                exportSize: 'a3',
+                titleFontSizeMultiplier: 1.0,
+                // 海报安全边距(mm)
+                printMargin: 3,
+            };
+
+            // ==================== 主题配置（全配置化，新增风格仅需添加条目） ====================
+            const THEMES = {
+                'dark-minimal': {
+                    id: 'dark-minimal',
+                    name: '暗夜极简',
+                    tileSource: 'osm', // osm | carto-light | carto-dark
+                    mapFilter: 'none', // CSS filter for map canvas
+                    posterBg: '#1a1d23',
+                    titleBarBg: '#111318',
+                    titleColor: '#ffffff',
+                    subtitleColor: '#8899aa',
+                    accentLine: '#5c9ce6',
+                    attributionColor: '#556677',
+                    desc: '深色背景，白色道路，极简美学',
+                },
+                'moonlight': {
+                    id: 'moonlight',
+                    name: '月光蓝',
+                    tileSource: 'carto-dark',
+                    mapFilter: 'hue-rotate(200deg) saturate(0.6) brightness(0.9)',
+                    posterBg: '#1a2433',
+                    titleBarBg: '#111a28',
+                    titleColor: '#d0e0f8',
+                    subtitleColor: '#7a9ab8',
+                    accentLine: '#5b9bd5',
+                    attributionColor: '#557799',
+                    desc: '冷蓝色调，如月光洒落',
+                },
+                'cyberpunk': {
+                    id: 'cyberpunk',
+                    name: '赛博朋克',
+                    tileSource: 'carto-dark',
+                    mapFilter: 'hue-rotate(280deg) saturate(2.5) brightness(1.1) contrast(1.3)',
+                    posterBg: '#0a0015',
+                    titleBarBg: '#050010',
+                    titleColor: '#ff2d95',
+                    subtitleColor: '#00e5ff',
+                    accentLine: '#ff2d95',
+                    attributionColor: '#663388',
+                    desc: '霓虹色彩，未来都市',
+                },
+                'ink-wash': {
+                    id: 'ink-wash',
+                    name: '水墨丹青',
+                    tileSource: 'osm',
+                    mapFilter: 'grayscale(1) brightness(1.05) contrast(1.2)',
+                    posterBg: '#f5f0e8',
+                    titleBarBg: '#e8e0d5',
+                    titleColor: '#2c2416',
+                    subtitleColor: '#6b5e4a',
+                    accentLine: '#8b7355',
+                    attributionColor: '#9b8b78',
+                    desc: '黑白水墨，东方韵味',
+                },
+                'autumn': {
+                    id: 'autumn',
+                    name: '秋日暖阳',
+                    tileSource: 'carto-light',
+                    mapFilter: 'sepia(0.5) saturate(1.3) brightness(1.05) hue-rotate(-10deg)',
+                    posterBg: '#faf5ef',
+                    titleBarBg: '#e8d5c0',
+                    titleColor: '#4a3020',
+                    subtitleColor: '#8b5e3c',
+                    accentLine: '#c47a3a',
+                    attributionColor: '#a08060',
+                    desc: '温暖秋色，金色年华',
+                },
+                'forest': {
+                    id: 'forest',
+                    name: '森林绿',
+                    tileSource: 'osm',
+                    mapFilter: 'hue-rotate(80deg) saturate(0.8) brightness(0.95)',
+                    posterBg: '#1a2218',
+                    titleBarBg: '#0f160e',
+                    titleColor: '#c8e6c0',
+                    subtitleColor: '#6b9b5a',
+                    accentLine: '#4caf50',
+                    attributionColor: '#557744',
+                    desc: '自然绿意，生机盎然',
+                },
+                'custom': {
+                    id: 'custom',
+                    name: '自定义',
+                    tileSource: 'carto-light',
+                    mapFilter: 'none',
+                    posterBg: '#1a1d23',
+                    titleBarBg: '#111318',
+                    titleColor: '#ffffff',
+                    subtitleColor: '#8899aa',
+                    accentLine: '#5c9ce6',
+                    attributionColor: '#556677',
+                    desc: '自定义颜色和样式',
+                },
+            };
+
+            // ==================== 城市坐标缓存 ====================
+            let CITY_DB = {};
+
+            async function loadCityDB() {
+                try {
+                    const resp = await fetch(CONFIG.citiesUrl + '?t=' + Date.now());
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        CITY_DB = data;
+                        // 转成 geocode 格式：flat array → { lat, lon, display }
+                        STATE.cityCache = {};
+                        for (const [name, coords] of Object.entries(data)) {
+                            STATE.cityCache[name] = { lat: coords[1], lon: coords[0], display: name };
+                        }
+                        console.log('[CityDB] 已加载 ' + Object.keys(CITY_DB).length + ' 个城市');
+                    }
+                } catch (e) {
+                    console.warn('[CityDB] 加载失败:', e.message);
+                }
+            }
+
+            // ==================== 全局状态 ====================
+            const STATE = {
+                map: null,
+                mapInstanceId: 0,
+                currentCity: null,
+                currentTheme: 'dark-minimal',
+                currentRadiusKm: 6,
+                isGenerating: false,
+                isExporting: false,
+                fontLoaded: false,
+                fontLoadAttempted: false,
+                cityCache: {},
+                userInteracted: false,
+                tileLoadTimeoutId: null,
+                settingsOpen: false,
+            };
+
+            // ==================== DOM 引用 ====================
+            const $ = (sel) => document.querySelector(sel);
+            const $$ = (sel) => document.querySelectorAll(sel);
+
+            const dom = {
+                map: $('#map'),
+                mapContainer: $('#mapContainer'),
+                mapLoadingOverlay: $('#mapLoadingOverlay'),
+                mapHint: $('#mapHint'),
+                cityInput: $('#cityInput'),
+                btnSearch: $('#btnSearch'),
+                searchSuggestions: $('#searchSuggestions'),
+                themeSelect: $('#themeSelect'),
+                radiusSlider: $('#radiusSlider'),
+                radiusVal: $('#radiusVal'),
+                btnExport: $('#btnExport'),
+                btnSettings: $('#btnSettings'),
+                settingsPanel: $('#settingsPanel'),
+                settingsOverlay: $('#settingsOverlay'),
+                btnCloseSettings: $('#btnCloseSettings'),
+                customTileUrl: $('#customTileUrl'),
+                tileSourceSelect: $('#tileSourceSelect'),
+                customTileInput: $('#customTileInput'),
+                exportDpi: $('#exportDpi'),
+                exportSize: $('#exportSize'),
+                titleFontSize: $('#titleFontSize'),
+                titleFontSizeVal: $('#titleFontSizeVal'),
+                btnSaveSettings: $('#btnSaveSettings'),
+                statusDot: $('#statusDot'),
+                statusText: $('#statusText'),
+                statusCoords: $('#statusCoords'),
+                toast: $('#toast'),
+                exportOverlay: $('#exportOverlay'),
+                exportText: $('#exportText'),
+                exportProgressFill: $('#exportProgressFill'),
+            };
+
+            // ==================== 工具函数 ====================
+            function showToast(msg, type = '') {
+                const t = dom.toast;
+                t.textContent = msg;
+                t.className = 'toast ' + type + ' show';
+                clearTimeout(t._timeout);
+                t._timeout = setTimeout(() => { t.className = 'toast'; }, 2500);
+            }
+
+            function setStatus(state, msg) {
+                dom.statusText.textContent = msg;
+                dom.statusDot.className = 'status-dot';
+                if (state === 'loading') dom.statusDot.classList.add('warning');
+                if (state === 'error') dom.statusDot.classList.add('error');
+            }
+
+            function showMapLoading(show) {
+                dom.mapLoadingOverlay.classList.toggle('visible', show);
+            }
+
+            function showExportOverlay(show, text = '正在生成高清海报…', progress = 0) {
+                dom.exportOverlay.style.display = show ? 'flex' : 'none';
+                dom.exportText.textContent = text;
+                dom.exportProgressFill.style.width = progress + '%';
+            }
+
+            function debounce(fn, ms) {
+                let t;
+                return (...args) => { clearTimeout(t);
+                    t = setTimeout(() => fn(...args), ms); };
+            }
+
+            // 安全 localStorage 封装
+            function safeLSGet(key, fallback = null) {
+                try { const v = localStorage.getItem('map_poster_' + key); return v !== null ? JSON.parse(v) :
+                        fallback; } catch (e) { return fallback; }
+            }
+
+            function safeLSSet(key, value) {
+                try { localStorage.setItem('map_poster_' + key, JSON.stringify(value)); } catch (e) { /* quota exceeded,
+                    ignore */ }
+            }
+
+            // 加载设置
+            function loadSettings() {
+                CONFIG.tileSource = safeLSGet('tileSource', 'osm');
+                CONFIG.customTileUrl = safeLSGet('customTileUrl', '');
+                CONFIG.exportDpi = safeLSGet('exportDpi', 300);
+                CONFIG.exportSize = safeLSGet('exportSize', 'a3');
+                CONFIG.titleFontSizeMultiplier = safeLSGet('titleFontSizeMultiplier', 1.0);
+                STATE.currentTheme = safeLSGet('theme', 'dark-minimal');
+                STATE.currentRadiusKm = safeLSGet('radiusKm', 6);
+
+                // 同步UI
+                dom.tileSourceSelect.value = CONFIG.tileSource;
+                dom.customTileInput.style.display = CONFIG.tileSource === 'custom' ? 'block' : 'none';
+                dom.customTileUrl.value = CONFIG.customTileUrl;
+                dom.exportDpi.value = String(CONFIG.exportDpi);
+                dom.exportSize.value = CONFIG.exportSize;
+                dom.titleFontSize.value = CONFIG.titleFontSizeMultiplier;
+                dom.titleFontSizeVal.textContent = CONFIG.titleFontSizeMultiplier.toFixed(1) + 'x';
+                dom.themeSelect.value = STATE.currentTheme;
+                dom.radiusSlider.value = STATE.currentRadiusKm;
+                dom.radiusVal.textContent = STATE.currentRadiusKm + 'km';
+            }
+
+            function saveSettings() {
+                CONFIG.tileSource = dom.tileSourceSelect.value;
+                CONFIG.customTileUrl = dom.customTileUrl.value.trim();
+                CONFIG.exportDpi = parseInt(dom.exportDpi.value) || 300;
+                CONFIG.exportSize = dom.exportSize.value;
+                CONFIG.titleFontSizeMultiplier = parseFloat(dom.titleFontSize.value) || 1.0;
+                dom.titleFontSizeVal.textContent = CONFIG.titleFontSizeMultiplier.toFixed(1) + 'x';
+                STATE.currentTheme = dom.themeSelect.value;
+                STATE.currentRadiusKm = parseFloat(dom.radiusSlider.value) || 6;
+                dom.radiusVal.textContent = STATE.currentRadiusKm + 'km';
+
+                safeLSSet('tileSource', CONFIG.tileSource);
+                safeLSSet('customTileUrl', CONFIG.customTileUrl);
+                safeLSSet('exportDpi', CONFIG.exportDpi);
+                safeLSSet('exportSize', CONFIG.exportSize);
+                safeLSSet('titleFontSizeMultiplier', CONFIG.titleFontSizeMultiplier);
+                safeLSSet('theme', STATE.currentTheme);
+                safeLSSet('radiusKm', STATE.currentRadiusKm);
+                showToast('✅ 设置已保存', 'success');
+            }
+
+            // ==================== 字体加载工具 ====================
+            async function loadChineseFont() {
+                if (STATE.fontLoaded) return true;
+                if (STATE.fontLoadAttempted && !STATE.fontLoaded) {
+                    // 之前尝试过但失败了，使用降级
+                    return false;
+                }
+                STATE.fontLoadAttempted = true;
+
+                // 检查缓存
+                const cached = safeLSGet('fontLoaded', false);
+                if (cached) {
+                    STATE.fontLoaded = true;
+                    return true;
+                }
+
+                // 尝试通过 Google Fonts 加载 Noto Sans SC
+                return new Promise((resolve) => {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href =
+                        'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap';
+                    link.onload = () => {
+                        // 验证字体是否真正可用
+                        document.fonts.load('1em "Noto Sans SC"').then(() => {
+                            STATE.fontLoaded = true;
+                            safeLSSet('fontLoaded', true);
+                            console.log('[Font] Noto Sans SC 加载成功');
+                            resolve(true);
+                        }).catch(() => {
+                            console.warn('[Font] 字体验证失败，使用降级方案');
+                            resolve(false);
+                        });
+                    };
+                    link.onerror = () => {
+                        console.warn('[Font] Google Fonts 加载失败，使用降级方案');
+                        resolve(false);
+                    };
+                    // 超时降级
+                    const timeout = setTimeout(() => {
+                        console.warn('[Font] 字体加载超时，使用降级方案');
+                        resolve(false);
+                    }, 6000);
+                    link.onload = () => {
+                        clearTimeout(timeout);
+                        link.onload = null;
+                        link.onerror = null;
+                    };
+                    link.onerror = () => {
+                        clearTimeout(timeout);
+                        link.onerror = null;
+                        link.onload = null;
+                    };
+                    document.head.appendChild(link);
+                });
+            }
+
+            function getDisplayFont() {
+                if (STATE.fontLoaded) {
+                    return '"Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif';
+                }
+                return '"PingFang SC", "Source Han Sans SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans SC", sans-serif';
+            }
+
+            // ==================== 地理编码工具 ====================
+            function searchCityInCache(query) {
+                const q = query.trim().toLowerCase();
+                // 精确匹配
+                for (const [key, val] of Object.entries(STATE.cityCache)) {
+                    if (key.toLowerCase() === q) return { ...val, matchedName: key };
+                }
+                // 模糊匹配
+                for (const [key, val] of Object.entries(STATE.cityCache)) {
+                    if (key.toLowerCase().includes(q) || q.includes(key.toLowerCase())) {
+                        return { ...val, matchedName: key };
+                    }
+                }
+                // 匹配display字段
+                for (const [key, val] of Object.entries(STATE.cityCache)) {
+                    if (val.display && val.display.toLowerCase().includes(q)) {
+                        return { ...val, matchedName: key };
+                    }
+                }
+                return null;
+            }
+
+            function getCacheSuggestions(query) {
+                const q = query.trim().toLowerCase();
+                if (!q) return Object.entries(STATE.cityCache).slice(0, 12).map(([k, v]) => ({ ...v, matchedName: k }));
+                const results = [];
+                for (const [key, val] of Object.entries(STATE.cityCache)) {
+                    const score =
+                        (key.toLowerCase().startsWith(q) ? 3 : 0) +
+                        (key.toLowerCase().includes(q) ? 2 : 0) +
+                        (val.display && val.display.toLowerCase().includes(q) ? 1 : 0);
+                    if (score > 0) results.push({ ...val, matchedName: key, _score: score });
+                }
+                results.sort((a, b) => b._score - a._score);
+                return results.slice(0, 12);
+            }
+
+            async function geocodeOnline(query) {
+                // 尝试多个来源：先试服务器代理，再试直接连
+                const urls = [
+                    CONFIG.geocodeUrl + '?q=' + encodeURIComponent(query) + '&format=json&limit=3&accept-language=zh',
+                    'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(query) + '&format=json&limit=3&accept-language=zh',
+                ];
+
+                for (const url of urls) {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 6000);
+
+                    try {
+                        const resp = await fetch(url, {
+                            signal: controller.signal,
+                            headers: url.startsWith('/') ? {} : {
+                                'Accept': 'application/json',
+                                'User-Agent': 'MapPoster/1.0',
+                            },
+                        });
+                        clearTimeout(timeout);
+                        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                        const data = await resp.json();
+                        if (data && data.length > 0) {
+                            const best = data[0];
+                            const result = {
+                                lat: parseFloat(best.lat),
+                                lon: parseFloat(best.lon),
+                                display: best.display_name || query,
+                                matchedName: query,
+                            };
+                            STATE.cityCache[query] = { lat: result.lat, lon: result.lon, display: result.display };
+                            try { safeLSSet('cityCache_extra', STATE.cityCache); } catch(e) {}
+                            return result;
+                        }
+                        return null;
+                    } catch (err) {
+                        clearTimeout(timeout);
+                        console.warn('[Geocode] 来源失败:', url.split('?')[0], err.message);
+                        continue;
+                    }
+                }
+                return null;
+            }
+
+            async function geocodeCity(query) {
+                if (!query || !query.trim()) return null;
+                const trimmed = query.trim();
+
+                // 1. 优先查本地缓存
+                const cached = searchCityInCache(trimmed);
+                if (cached) {
+                    console.log('[Geocode] 缓存命中:', cached.matchedName);
+                    return cached;
+                }
+
+                // 2. 在线查询
+                setStatus('loading', '正在查询城市坐标…');
+                const online = await geocodeOnline(trimmed);
+                if (online) {
+                    console.log('[Geocode] 在线查询成功:', online.display);
+                    setStatus('ok', '城市坐标查询成功');
+                    return online;
+                }
+
+                // 3. 兜底：提示用户
+                setStatus('error', '未找到该城市，请尝试更具体的名称或检查网络');
+                showToast('⚠️ 未找到城市 "' + trimmed + '"，请尝试其他名称', 'error');
+                return null;
+            }
+
+            // ==================== 地图核心层 ====================
+            function getTileUrl() {
+                if (CONFIG.tileSource === 'custom') {
+                    return CONFIG.customTileUrl.includes('{z}') ? CONFIG.customTileUrl : null;
+                }
+                return CONFIG.tileSources[CONFIG.tileSource] || null;
+            }
+
+            function buildMapStyle(tileUrl, mapFilter, bgColor) {
+                if (!tileUrl) return null;
+                return {
+                    version: 8,
+                    sources: {
+                        'osm-raster': {
+                            type: 'raster',
+                            tiles: [tileUrl],
+                            tileSize: 256,
+                            attribution: '© OpenStreetMap | © CartoDB',
+                            maxzoom: 19,
+                        },
+                    },
+                    layers: [{
+                        id: 'osm-raster-layer',
+                        type: 'raster',
+                        source: 'osm-raster',
+                        paint: {
+                            'raster-opacity': 1,
+                            'raster-resampling': 'linear',
+                            'raster-contrast': mapFilter && mapFilter !== 'none' ? 0 : 0,
+                            'raster-saturation': mapFilter && mapFilter !== 'none' ? 0 : 0,
+                        },
+                    }],
+                    // CSS filter for the map canvas
+                    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+                    metadata: { 'mapfilter': mapFilter || '' },
+                };
+            }
+
+            function getMapStyle() {
+                const tileUrl = getTileUrl();
+                return {
+                    version: 8,
+                    sources: {
+                        'osm-raster': {
+                            type: 'raster',
+                            tiles: [tileUrl],
+                            tileSize: 256,
+                            attribution: '© OpenStreetMap contributors | © CartoDB',
+                            maxzoom: 19,
+                        },
+                    },
+                    layers: [{
+                        id: 'osm-raster-layer',
+                        type: 'raster',
+                        source: 'osm-raster',
+                        paint: {
+                            'raster-opacity': 1,
+                            'raster-resampling': 'linear',
+                        },
+                    }],
+                };
+            }
+
+            function destroyMap() {
+                if (STATE.map) {
+                    try {
+                        STATE.map.remove();
+                    } catch (e) {
+                        // 忽略移除错误
+                    }
+                    STATE.map = null;
+                }
+                STATE.mapInstanceId++;
+                // 清理地图容器
+                dom.map.innerHTML = '';
+                const newMapEl = document.createElement('div');
+                newMapEl.id = 'map';
+                newMapEl.style.width = '100%';
+                newMapEl.style.height = '100%';
+                newMapEl.style.position = 'absolute';
+                newMapEl.style.top = '0';
+                newMapEl.style.left = '0';
+                dom.mapContainer.appendChild(newMapEl);
+                dom.map = newMapEl;
+            }
+
+            function kmToZoom(radiusKm, lat) {
+                // 粗略换算：在纬度lat处，每像素对应地面距离
+                // zoom N: 地面分辨率 ≈ 156543.03 * cos(lat) / 2^N 米/像素
+                // 海报可见宽度对应实际地面宽度 = 2 * radiusKm * 1000 米
+                // 海报宽度约 2000px (高清) -> 每像素 = 2*radiusKm*1000 / 2000 = radiusKm 米/像素
+                // zoom = log2(156543.03 * cos(lat) / (radiusKm * 1000))
+                const latRad = (lat || 35) * Math.PI / 180;
+                const groundRes = radiusKm * 1000; // 米/像素(近似)
+                const zoom = Math.log2(156543.03 * Math.cos(latRad) / groundRes);
+                return Math.max(CONFIG.minZoom, Math.min(CONFIG.maxZoom, Math.round(zoom)));
+            }
+
+            async function initMap(center, radiusKm) {
+                destroyMap();
+
+                const zoom = kmToZoom(radiusKm, center[1]);
+                const style = getMapStyle();
+
+                return new Promise((resolve, reject) => {
+                    try {
+                        const mapInstance = new maplibregl.Map({
+                            container: dom.map,
+                            style: style,
+                            center: center,
+                            zoom: zoom,
+                            minZoom: CONFIG.minZoom,
+                            maxZoom: CONFIG.maxZoom,
+                            attributionControl: true,
+                            dragRotate: false,
+                            touchZoomRotate: true,
+                            renderWorldCopies: true,
+                            preserveDrawingBuffer: true, // 关键：允许导出canvas
+                            transformRequest: (url) => {
+                                // 如果配置了代理前缀且URL不是相对路径，应用代理
+                                if (CONFIG.proxyPrefix && url.startsWith('http') && !url.includes(
+                                        'openstreetmap.org') && !url.includes('cartocdn.com')) {
+                                    return { url: CONFIG.proxyPrefix + encodeURIComponent(url) };
+                                }
+                                return { url };
+                            },
+                        });
+
+                        mapInstance.on('load', () => {
+                            console.log('[Map] 地图加载完成, zoom:', zoom);
+                            STATE.map = mapInstance;
+                            STATE.mapInstanceId++;
+                            resolve(mapInstance);
+                        });
+
+                        mapInstance.on('error', (e) => {
+                            // 单个瓦片加载失败不reject，只记录日志
+                            console.warn('[Map] 瓦片加载错误:', e.error?.message || '未知');
+                        });
+
+                        // 30秒超时：如果load事件未触发则reject
+                        const mapTimeoutId = setTimeout(() => {
+                            if (!mapInstance.loaded()) {
+                                reject(new Error('地图加载超时（30秒），瓦片源可能不可达'));
+                            }
+                        }, 30000);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }
+
+            function waitForMapIdle(mapInstance, timeoutMs = 12000) {
+                return new Promise((resolve, reject) => {
+                    if (!mapInstance || !mapInstance.loaded()) {
+                        resolve(); // 地图未加载完成，直接继续
+                        return;
+                    }
+                    let resolved = false;
+                    const timeout = setTimeout(() => {
+                        if (!resolved) {
+                            resolved = true;
+                            console.warn('[Map] idle超时，继续导出');
+                            resolve();
+                        }
+                    }, timeoutMs);
+                    mapInstance.once('idle', () => {
+                        if (!resolved) {
+                            resolved = true;
+                            clearTimeout(timeout);
+                            // 额外等待200ms确保所有瓦片绘制完成
+                            setTimeout(resolve, 300);
+                        }
+                    });
+                    // 如果地图已经idle，立即触发
+                    if (!mapInstance.isMoving() && !mapInstance.isZooming()) {
+                        setTimeout(() => {
+                            if (!resolved) {
+                                resolved = true;
+                                clearTimeout(timeout);
+                                resolve();
+                            }
+                        }, 300);
+                    }
+                });
+            }
+
+            function lockMapInteraction(mapInstance) {
+                if (!mapInstance) return;
+                mapInstance.scrollZoom.disable();
+                mapInstance.dragPan.disable();
+                mapInstance.dragRotate.disable();
+                mapInstance.doubleClickZoom.disable();
+                mapInstance.touchZoomRotate.disable();
+                mapInstance.boxZoom.disable();
+                mapInstance.keyboard.disable();
+            }
+
+            function unlockMapInteraction(mapInstance) {
+                if (!mapInstance) return;
+                mapInstance.scrollZoom.enable();
+                mapInstance.dragPan.enable();
+                mapInstance.dragRotate.enable();
+                mapInstance.doubleClickZoom.enable();
+                mapInstance.touchZoomRotate.enable();
+                mapInstance.boxZoom.enable();
+                mapInstance.keyboard.enable();
+            }
+
+            // ==================== 海报导出工具 ====================
+            function getExportDimensions() {
+                const sizeKey = CONFIG.exportSize;
+                const dpi = CONFIG.exportDpi;
+                const mmToInch = 25.4;
+                let widthMm, heightMm;
+                switch (sizeKey) {
+                    case 'a4':
+                        widthMm = 210;
+                        heightMm = 297;
+                        break;
+                    case 'a3':
+                        widthMm = 297;
+                        heightMm = 420;
+                        break;
+                    case '16x9':
+                        widthMm = 420;
+                        heightMm = 236;
+                        break;
+                    case 'square':
+                        widthMm = 297;
+                        heightMm = 297;
+                        break;
+                    default:
+                        widthMm = 297;
+                        heightMm = 420;
+                }
+                const marginMm = CONFIG.printMargin;
+                const usableWidthMm = widthMm - marginMm * 2;
+                const usableHeightMm = heightMm - marginMm * 2;
+                const widthPx = Math.round(usableWidthMm / mmToInch * dpi);
+                const heightPx = Math.round(usableHeightMm / mmToInch * dpi);
+                return { widthPx, heightPx, widthMm, heightMm, marginMm, dpi, usableWidthMm, usableHeightMm };
+            }
+
+            async function generatePoster(mapInstance, cityInfo) {
+                const dims = getExportDimensions();
+                const { widthPx, heightPx, marginMm, dpi, usableWidthMm, usableHeightMm } = dims;
+                const mmToInch = 25.4;
+                const marginPx = Math.round(marginMm / mmToInch * dpi);
+
+                // 海报布局：地图占78%，标题栏占22%
+                const titleBarRatio = 0.22;
+                const mapHeightPx = Math.round(heightPx * (1 - titleBarRatio));
+                const titleBarHeightPx = heightPx - mapHeightPx;
+
+                // 创建离屏canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = widthPx + marginPx * 2;
+                canvas.height = heightPx + marginPx * 2;
+                const ctx = canvas.getContext('2d');
+
+                // 获取主题
+                const theme = THEMES[STATE.currentTheme] || THEMES['dark-minimal'];
+
+                // 绘制海报背景
+                ctx.fillStyle = theme.posterBg;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // 绘制地图部分
+                const mapCanvas = mapInstance.getCanvas();
+                if (!mapCanvas || mapCanvas.width === 0) {
+                    throw new Error('地图画布不可用');
+                }
+
+                const mapDrawX = marginPx;
+                const mapDrawY = marginPx;
+                const mapDrawW = widthPx;
+                const mapDrawH = mapHeightPx;
+
+                // 裁剪地图为圆角矩形（可选）
+                ctx.save();
+                const borderRadius = Math.round(Math.min(widthPx, heightPx) * 0.008);
+                drawRoundedRect(ctx, mapDrawX, mapDrawY, mapDrawW, mapDrawH, borderRadius);
+                ctx.clip();
+
+                // 绘制地图canvas（缩放适配）
+                ctx.drawImage(mapCanvas, mapDrawX, mapDrawY, mapDrawW, mapDrawH);
+
+                // 应用主题滤镜（如果地图canvas没有预设滤镜的话，在此处叠加）
+                if (theme.mapFilter && theme.mapFilter !== 'none') {
+                    ctx.globalCompositeOperation = 'source-atop';
+                    // 使用CSS filter等效的颜色矩阵覆盖
+                    ctx.fillStyle = 'transparent';
+                    // 实际滤镜通过临时canvas实现
+                }
+                ctx.restore();
+
+                // 绘制地图边框
+                ctx.strokeStyle = theme.accentLine;
+                ctx.lineWidth = Math.max(1, Math.round(dpi / 150));
+                drawRoundedRect(ctx, mapDrawX, mapDrawY, mapDrawW, mapDrawH, borderRadius);
+                ctx.stroke();
+
+                // 绘制标题栏
+                const titleBarY = mapDrawY + mapDrawH;
+                ctx.fillStyle = theme.titleBarBg;
+                ctx.fillRect(mapDrawX, titleBarY, mapDrawW, titleBarHeightPx);
+
+                // 标题栏顶部装饰线
+                ctx.fillStyle = theme.accentLine;
+                ctx.fillRect(mapDrawX, titleBarY, mapDrawW, Math.max(2, Math.round(dpi / 120)));
+
+                // 绘制城市名称
+                const cityName = cityInfo?.display || cityInfo?.matchedName || 'Unknown City';
+                const mainName = cityName.split('·')[0]?.trim() || cityName.split('—')[0]?.trim() || cityName;
+                const subName = cityName.includes('·') ? cityName.split('·').slice(1).join('·').trim() : '';
+
+                const titleFontSize = Math.round(titleBarHeightPx * 0.32 * CONFIG.titleFontSizeMultiplier);
+                const subFontSize = Math.round(titleBarHeightPx * 0.16);
+                const fontFamily = getDisplayFont();
+
+                ctx.fillStyle = theme.titleColor;
+                ctx.font = `900 ${titleFontSize}px ${fontFamily}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const titleTextY = titleBarY + titleBarHeightPx * 0.42;
+                ctx.fillText(mainName, mapDrawX + mapDrawW / 2, titleTextY);
+
+                // 副标题
+                if (subName) {
+                    ctx.fillStyle = theme.subtitleColor;
+                    ctx.font = `400 ${subFontSize}px ${fontFamily}`;
+                    ctx.fillText(subName, mapDrawX + mapDrawW / 2, titleTextY + titleFontSize * 0.7);
+                }
+
+                // 坐标信息
+                const coordText =
+                    `${Math.abs(cityInfo?.lat || 0).toFixed(4)}°${cityInfo?.lat >= 0 ? 'N' : 'S'} · ${Math.abs(cityInfo?.lon || 0).toFixed(4)}°${cityInfo?.lon >= 0 ? 'E' : 'W'}`;
+                ctx.fillStyle = theme.subtitleColor;
+                const coordFontSize = Math.round(titleBarHeightPx * 0.1);
+                ctx.font = `400 ${coordFontSize}px ${fontFamily}`;
+                const coordY = titleBarY + titleBarHeightPx * 0.78;
+                ctx.fillText(coordText, mapDrawX + mapDrawW / 2, coordY);
+
+                // 地图归属标注
+                ctx.fillStyle = theme.attributionColor;
+                const attrFontSize = Math.round(titleBarHeightPx * 0.07);
+                ctx.font = `400 ${attrFontSize}px ${fontFamily}`;
+                ctx.fillText('© OpenStreetMap contributors', mapDrawX + mapDrawW / 2, coordY + titleBarHeightPx * 0.12);
+
+                // 底部分隔线
+                const bottomLineY = titleBarY + titleBarHeightPx;
+                ctx.fillStyle = theme.accentLine;
+                ctx.globalAlpha = 0.4;
+                ctx.fillRect(mapDrawX, bottomLineY - 1, mapDrawW, Math.max(1, Math.round(dpi / 200)));
+                ctx.globalAlpha = 1;
+
+                return canvas;
+            }
+
+            function drawRoundedRect(ctx, x, y, w, h, r) {
+                r = Math.min(r, w / 2, h / 2);
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + w - r, y);
+                ctx.arcTo(x + w, y, x + w, y + r, r);
+                ctx.lineTo(x + w, y + h - r);
+                ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+                ctx.lineTo(x + r, y + h);
+                ctx.arcTo(x, y + h, x, y + h - r, r);
+                ctx.lineTo(x, y + r);
+                ctx.arcTo(x, y, x + r, y, r);
+                ctx.closePath();
+            }
+
+            async function downloadPoster(canvas, cityName) {
+                const sanitizedName = (cityName || 'map').replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_').substring(0, 40);
+                const timestamp = new Date().toISOString().slice(0, 10);
+                const filename = `MapPoster_${sanitizedName}_${STATE.currentTheme}_${timestamp}.png`;
+
+                // 尝试使用toBlob（更好的内存管理）
+                if (canvas.toBlob && !/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                    return new Promise((resolve, reject) => {
+                        canvas.toBlob((blob) => {
+                            if (blob) {
+                                const url = URL.createObjectURL(blob);
+                                triggerDownload(url, filename);
+                                URL.revokeObjectURL(url);
+                                resolve();
+                            } else {
+                                // 降级到toDataURL
+                                fallbackDataUrl();
+                            }
+                        }, 'image/png', 0.95);
+                    });
+                } else {
+                    return fallbackDataUrl();
+                }
+
+                function fallbackDataUrl() {
+                    try {
+                        const dataUrl = canvas.toDataURL('image/png', 0.92);
+                        triggerDownload(dataUrl, filename);
+                        return Promise.resolve();
+                    } catch (e) {
+                        return Promise.reject(new Error('导出失败：画布过大，请尝试降低DPI或缩小尺寸'));
+                    }
+                }
+            }
+
+            function triggerDownload(url, filename) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                }, 300);
+            }
+
+            // ==================== 主流程 ====================
+            async function generateCityMap(cityQuery) {
+                if (STATE.isGenerating) return;
+                STATE.isGenerating = true;
+                showMapLoading(true);
+                setStatus('loading', '正在检索城市坐标…');
+                dom.btnSearch.disabled = true;
+                dom.btnExport.disabled = true;
+
+                try {
+                    // 1. 地理编码
+                    const cityInfo = await geocodeCity(cityQuery);
+                    if (!cityInfo) {
+                        showMapLoading(false);
+                        setStatus('error', '未找到城市，请检查名称或网络连接');
+                        STATE.isGenerating = false;
+                        dom.btnSearch.disabled = false;
+                        dom.btnExport.disabled = false;
+                        return;
+                    }
+                    STATE.currentCity = cityInfo;
+                    dom.statusCoords.textContent =
+                        `${cityInfo.lat.toFixed(4)}, ${cityInfo.lon.toFixed(4)} | ${cityInfo.matchedName}`;
+                    setStatus('loading', '正在加载地图瓦片…');
+
+                    // 2. 初始化地图
+                    const center = [cityInfo.lon, cityInfo.lat];
+                    const mapInstance = await initMap(center, STATE.currentRadiusKm);
+                    STATE.map = mapInstance;
+                    unlockMapInteraction(mapInstance);
+
+                    // 3. 等待渲染完成
+                    setStatus('loading', '等待地图渲染完成…');
+                    await waitForMapIdle(mapInstance, 15000);
+
+                    // 4. 完成
+                    showMapLoading(false);
+                    setStatus('ok', `✅ ${cityInfo.matchedName} — 地图已就绪，可导出海报`);
+                    dom.mapHint.classList.add('hidden');
+                    STATE.userInteracted = true;
+                    showToast(`📍 ${cityInfo.matchedName} 地图加载完成`, 'success');
+
+                } catch (err) {
+                    console.error('[Generate] 错误:', err);
+                    showMapLoading(false);
+                    setStatus('error', '地图加载失败: ' + err.message);
+                    showToast('❌ ' + err.message, 'error');
+                } finally {
+                    STATE.isGenerating = false;
+                    dom.btnSearch.disabled = false;
+                    dom.btnExport.disabled = false;
+                }
+            }
+
+            async function exportPoster() {
+                if (STATE.isExporting || !STATE.map || !STATE.currentCity) {
+                    showToast('⚠️ 请先搜索并加载城市地图', 'error');
+                    return;
+                }
+                STATE.isExporting = true;
+                dom.btnExport.disabled = true;
+                showExportOverlay(true, '正在准备导出…', 10);
+                setStatus('loading', '正在生成高清海报…');
+
+                try {
+                    const mapInstance = STATE.map;
+
+                    // 锁定地图交互
+                    lockMapInteraction(mapInstance);
+                    showExportOverlay(true, '等待地图稳定…', 25);
+
+                    // 等待idle
+                    await waitForMapIdle(mapInstance, 10000);
+                    showExportOverlay(true, '正在渲染海报画布…', 50);
+
+                    // 生成海报
+                    const posterCanvas = await generatePoster(mapInstance, STATE.currentCity);
+                    showExportOverlay(true, '正在压缩导出…', 75);
+
+                    // 下载
+                    const cityDisplayName = STATE.currentCity.matchedName || STATE.currentCity.display || 'city';
+                    await downloadPoster(posterCanvas, cityDisplayName);
+                    showExportOverlay(true, '导出完成！', 100);
+
+                    // 短暂延迟后关闭遮罩
+                    setTimeout(() => {
+                        showExportOverlay(false);
+                        unlockMapInteraction(mapInstance);
+                        setStatus('ok', `✅ 海报已导出 — ${cityDisplayName}`);
+                        showToast('🎉 海报导出成功！', 'success');
+                    }, 600);
+
+                } catch (err) {
+                    console.error('[Export] 错误:', err);
+                    showExportOverlay(false);
+                    if (STATE.map) unlockMapInteraction(STATE.map);
+                    setStatus('error', '导出失败: ' + err.message);
+                    showToast('❌ 导出失败: ' + err.message, 'error');
+                } finally {
+                    STATE.isExporting = false;
+                    dom.btnExport.disabled = false;
+                    // 清理导出遮罩（确保）
+                    setTimeout(() => {
+                        if (!STATE.isExporting) showExportOverlay(false);
+                    }, 2000);
+                }
+            }
+
+            // ==================== UI 交互层 ====================
+            function updateSuggestions(query) {
+                const suggestions = getCacheSuggestions(query);
+                const container = dom.searchSuggestions;
+                if (suggestions.length === 0 && query.trim()) {
+                    container.innerHTML =
+                        '<div class="suggestion-item" style="color:var(--text-secondary);">🔍 按回车在线搜索…</div>';
+                    container.classList.add('active');
+                    return;
+                }
+                if (suggestions.length === 0) {
+                    container.classList.remove('active');
+                    return;
+                }
+                container.innerHTML = suggestions.map(s =>
+                    `<div class="suggestion-item" data-city="${s.matchedName}" data-lat="${s.lat}" data-lon="${s.lon}">
+                ${s.matchedName} <span class="coord">${s.lat.toFixed(2)}, ${s.lon.toFixed(2)}</span>
+              </div>`
+                ).join('');
+                container.classList.add('active');
+            }
+
+            dom.cityInput.addEventListener('input', () => {
+                updateSuggestions(dom.cityInput.value);
+            });
+            dom.cityInput.addEventListener('focus', () => {
+                updateSuggestions(dom.cityInput.value);
+            });
+            dom.cityInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const query = dom.cityInput.value.trim();
+                    if (query) {
+                        dom.searchSuggestions.classList.remove('active');
+                        generateCityMap(query);
+                    }
+                }
+                if (e.key === 'Escape') {
+                    dom.searchSuggestions.classList.remove('active');
+                    dom.cityInput.blur();
+                }
+            });
+            dom.cityInput.addEventListener('blur', () => {
+                setTimeout(() => dom.searchSuggestions.classList.remove('active'), 200);
+            });
+
+            dom.searchSuggestions.addEventListener('click', (e) => {
+                const item = e.target.closest('.suggestion-item');
+                if (item && item.dataset.city) {
+                    dom.cityInput.value = item.dataset.city;
+                    dom.searchSuggestions.classList.remove('active');
+                    generateCityMap(item.dataset.city);
+                }
+            });
+
+            dom.btnSearch.addEventListener('click', () => {
+                const query = dom.cityInput.value.trim();
+                if (query) {
+                    dom.searchSuggestions.classList.remove('active');
+                    generateCityMap(query);
+                } else {
+                    showToast('请输入城市名称', 'error');
+                }
+            });
+
+            dom.themeSelect.addEventListener('change', () => {
+                STATE.currentTheme = dom.themeSelect.value;
+                safeLSSet('theme', STATE.currentTheme);
+                if (STATE.currentCity) {
+                    // 重新加载地图以应用新主题
+                    showToast('🎨 正在应用主题: ' + (THEMES[STATE.currentTheme]?.name || STATE.currentTheme),
+                        'success');
+                    generateCityMap(STATE.currentCity.matchedName || STATE.currentCity.display);
+                }
+            });
+
+            dom.radiusSlider.addEventListener('input', debounce(() => {
+                STATE.currentRadiusKm = parseFloat(dom.radiusSlider.value) || 6;
+                dom.radiusVal.textContent = STATE.currentRadiusKm + 'km';
+                safeLSSet('radiusKm', STATE.currentRadiusKm);
+                if (STATE.map && STATE.currentCity) {
+                    const newZoom = kmToZoom(STATE.currentRadiusKm, STATE.currentCity.lat);
+                    STATE.map.setZoom(newZoom);
+                }
+            }, 400));
+
+            dom.btnExport.addEventListener('click', () => {
+                if (!STATE.isExporting) exportPoster();
+            });
+
+            // 设置面板
+            dom.btnSettings.addEventListener('click', () => {
+                STATE.settingsOpen = true;
+                dom.settingsPanel.classList.add('open');
+                dom.settingsOverlay.classList.add('open');
+                // 同步离线缓存显示
+                dom.offlineCityCache.value = JSON.stringify(STATE.cityCache, null, 2);
+            });
+            dom.btnCloseSettings.addEventListener('click', closeSettings);
+            dom.settingsOverlay.addEventListener('click', closeSettings);
+
+            function closeSettings() {
+                STATE.settingsOpen = false;
+                dom.settingsPanel.classList.remove('open');
+                dom.settingsOverlay.classList.remove('open');
+            }
+            dom.btnSaveSettings.addEventListener('click', () => {
+                saveSettings();
+                closeSettings();
+                // 如果主题或瓦片源变了，重新加载
+                if (STATE.currentCity) {
+                    generateCityMap(STATE.currentCity.matchedName || STATE.currentCity.display);
+                }
+            });
+            dom.titleFontSize.addEventListener('input', () => {
+                dom.titleFontSizeVal.textContent = parseFloat(dom.titleFontSize.value).toFixed(1) + 'x';
+            });
+
+            // 键盘快捷键
+            document.addEventListener('keydown', (e) => {
+                if (STATE.settingsOpen && e.key === 'Escape') {
+                    closeSettings();
+                    return;
+                }
+                if (e.ctrlKey && e.key === 'e') {
+                    e.preventDefault();
+                    if (!STATE.isExporting) exportPoster();
+                }
+                if (e.ctrlKey && e.key === 'k') {
+                    e.preventDefault();
+                    dom.cityInput.focus();
+                }
+                if (e.ctrlKey && e.key === ',') {
+                    e.preventDefault();
+                    if (STATE.settingsOpen) closeSettings();
+                    else {
+                        STATE.settingsOpen = true;
+                        dom.settingsPanel.classList.add('open');
+                        dom.settingsOverlay.classList.add('open');
+                        dom.offlineCityCache.value = JSON.stringify(STATE.cityCache, null, 2);
+                    }
+                }
+            });
+
+            // 窗口大小变化时更新地图
+            window.addEventListener('resize', debounce(() => {
+                if (STATE.map) {
+                    STATE.map.resize();
+                }
+            }, 300));
+
+            // 页面卸载清理
+            window.addEventListener('beforeunload', () => {
+                if (STATE.map) {
+                    try { STATE.map.remove(); } catch (e) {}
+                    STATE.map = null;
+                }
+                clearTimeout(STATE.tileLoadTimeoutId);
+            });
+
+            // 移动端：地图点击隐藏提示
+            dom.mapContainer.addEventListener('pointerdown', () => {
+                if (!STATE.userInteracted) {
+                    STATE.userInteracted = true;
+                    dom.mapHint.classList.add('hidden');
+                }
+            }, { once: false });
+
+            // ==================== 初始化 ====================
+            async function initialize() {
+                console.log('[MapPoster] 初始化 v' + CONFIG.version + ' | MIT License');
+
+                // 加载设置
+                loadSettings();
+
+                // 检查 MapLibre GL 是否已加载
+                if (typeof maplibregl === 'undefined') {
+                    setStatus('error', '⚠️ 地图引擎加载失败，尝试使用CDN备用源…');
+                    // 尝试从 CDN 加载
+                    try {
+                        await new Promise((resolve, reject) => {
+                            var s = document.createElement('script');
+                            s.src = 'https://cdn.jsdelivr.net/npm/maplibre-gl@4.6.0/dist/maplibre-gl.js';
+                            s.onload = resolve;
+                            s.onerror = reject;
+                            document.head.appendChild(s);
+                        });
+                        // 也加载 CSS
+                        var c = document.createElement('link');
+                        c.rel = 'stylesheet';
+                        c.href = 'https://cdn.jsdelivr.net/npm/maplibre-gl@4.6.0/dist/maplibre-gl.css';
+                        document.head.appendChild(c);
+                    } catch(e2) {
+                        setStatus('error', '⚠️ 地图引擎加载失败，请刷新页面重试（可能需要代理/加速器）');
+                        showToast('❌ 地图引擎加载失败，请检查网络连接', 'error');
+                        return;
+                    }
+                }
+
+                // 加载城市数据库
+                await loadCityDB();
+                // 合并 localStorage 中的额外缓存
+                try {
+                    const extra = safeLSGet('cityCache_extra', {});
+                    if (typeof extra === 'object') Object.assign(STATE.cityCache, extra);
+                } catch(e) {}
+
+                // 预加载字体（后台进行，不阻塞）
+                loadChineseFont().then((loaded) => {
+                    if (loaded) console.log('[Font] 中文字体预加载完成');
+                });
+
+                // 检查WebGL支持
+                try {
+                    if (!maplibregl.supported()) {
+                        setStatus('error', '⚠️ 您的浏览器不支持WebGL，地图无法渲染');
+                        showToast('⚠️ 浏览器不支持WebGL，请使用现代浏览器', 'error');
+                        return;
+                    }
+                } catch(e) {
+                    setStatus('error', '⚠️ WebGL检测失败: ' + e.message);
+                    showToast('⚠️ WebGL检测异常，地图可能无法渲染', 'error');
+                    return;
+                }
+
+                // Tile source select 切换逻辑
+                dom.tileSourceSelect.addEventListener('change', function() {
+                    dom.customTileInput.style.display = this.value === 'custom' ? 'block' : 'none';
+                });
+
+                // 初始加载默认城市（天津）
+                const defaultCity = '天津';
+                dom.cityInput.value = defaultCity;
+                setStatus('loading', '正在初始化…');
+                try {
+                    await generateCityMap(defaultCity);
+                } catch(e) {
+                    console.error('[Init] generateCityMap 未捕获异常:', e);
+                    setStatus('error', '地图加载异常: ' + (e.message || '未知错误'));
+                    showToast('❌ 地图加载异常，请刷新重试', 'error');
+                    return;
+                }
+
+                // 延迟3秒后隐藏提示
+                setTimeout(() => dom.mapHint.classList.add('hidden'), 3000);
+
+                console.log('[MapPoster] 初始化完成');
+                console.log('[MapPoster] 主题:', Object.keys(THEMES).length, '种可选');
+                console.log('[MapPoster] 离线缓存城市:', Object.keys(STATE.cityCache).length, '个');
+                console.log('[MapPoster] 快捷键: Ctrl+K 搜索 | Ctrl+E 导出 | Ctrl+, 设置');
+
+                // 流量统计
+                try {
+                    fetch('/api/stats/ping?tool=map-poster&v=' + CONFIG.version, { method: 'GET', mode: 'no-cors' });
+                } catch(e) {}
+            }
+
+            // 启动
+            initialize().catch((err) => {
+                console.error('[MapPoster] 初始化失败:', err);
+                setStatus('error', '初始化失败: ' + err.message);
+                showToast('❌ 初始化失败，请检查网络后刷新重试', 'error');
+            });
+
+            console.log(`%c🗺️ 城市海报生成器 %cv${CONFIG.version}
+        %cMIT License · 纯前端 · © OpenStreetMap contributors`,
+                'font-size:1.2em;font-weight:bold;color:#5c9ce6;',
+                'font-size:0.9em;color:#aaa;',
+                'color:#5cb878;'
+            );
+
+        })();
+    </script>
+</body>
+</html>
