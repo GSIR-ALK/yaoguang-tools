@@ -652,6 +652,7 @@
             <option value="ink-wash">🖌️ 水墨丹青</option>
             <option value="autumn">🍂 秋日暖阳</option>
             <option value="forest">🌲 森林绿</option>
+            <option value="custom">🎨 自定义</option>
         </select>
         <div class="radius-group">
             <span>范围</span>
@@ -682,11 +683,19 @@
     <div class="settings-overlay" id="settingsOverlay"></div>
     <div class="settings-panel" id="settingsPanel">
         <button class="btn-close" id="btnCloseSettings">✕</button>
-        <h3>⚙️ 高级设置</h3>
-        <label>CORS 代理前缀（用于地理编码请求，留空则直连）</label>
-        <input type="text" id="proxyPrefix" placeholder="例如: https://your-cors-proxy.workers.dev/?url=" />
-        <label>自定义瓦片源 URL 模板（{z}/{x}/{y} 占位）</label>
-        <input type="text" id="customTileUrl" placeholder="留空使用默认OSM瓦片" />
+        <h3>⚙️ 海报设置</h3>
+        <label>瓦片地图源</label>
+        <select id="tileSourceSelect">
+            <option value="carto-light">Carto 浅色（推荐）</option>
+            <option value="carto-dark">Carto 暗色</option>
+            <option value="osm">OpenStreetMap 标准</option>
+            <option value="arcgis">ArcGIS 卫星混合</option>
+            <option value="custom">自定义 URL</option>
+        </select>
+        <div id="customTileInput" style="display:none;">
+            <label>自定义瓦片 URL 模板（{z}/{x}/{y} 占位）</label>
+            <input type="text" id="customTileUrl" placeholder="https://tile.example.com/{z}/{x}/{y}.png" />
+        </div>
         <label>导出 DPI</label>
         <select id="exportDpi">
             <option value="150">150 DPI（轻量）</option>
@@ -703,13 +712,7 @@
         <label>海报标题字体大小（相对比例）</label>
         <input type="range" id="titleFontSize" min="0.5" max="2.5" value="1" step="0.1" style="width:100%;" />
         <span style="font-size:0.7rem;color:var(--text-secondary);">当前倍率: <strong id="titleFontSizeVal">1.0x</strong></span>
-        <label>离线城市坐标缓存（JSON格式，可手动编辑扩充）</label>
-        <textarea id="offlineCityCache" rows="6" style="font-size:0.7rem;"></textarea>
         <button class="btn-save-settings" id="btnSaveSettings">💾 保存设置</button>
-        <p style="font-size:0.65rem;color:var(--text-secondary);margin-top:10px;line-height:1.5;">
-            💡 提示：若地理编码跨域失败，请配置CORS代理前缀。<br />
-            推荐免费代理：<code style="font-size:0.65rem;">https://corsproxy.io/?</code>（第三方公共服务，请自行评估稳定性）
-        </p>
     </div>
 
     <!-- ==================== Toast ==================== -->
@@ -742,17 +745,21 @@
                 minZoom: 8,
                 maxZoom: 18,
                 // 瓦片源
-                defaultTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                cartoLightUrl: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                cartoDarkUrl: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-                // Nominatim API
-                nominatimUrl: 'https://nominatim.openstreetmap.org/search',
+                tileSources: {
+                    'carto-light': 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                    'carto-dark': 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                    'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    'arcgis': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                },
+                tileSource: 'carto-light',
+                // 地理编码（走服务器代理）
+                geocodeUrl: '/api/geocode',
+                // 城市缓存
+                citiesUrl: '/tools/map-poster/cities.json',
                 // 导出配置
                 exportDpi: 300,
                 exportSize: 'a3',
                 titleFontSizeMultiplier: 1.0,
-                // 代理前缀（可配置）
-                proxyPrefix: '',
                 // 海报安全边距(mm)
                 printMargin: 3,
             };
@@ -837,62 +844,41 @@
                     attributionColor: '#557744',
                     desc: '自然绿意，生机盎然',
                 },
+                'custom': {
+                    id: 'custom',
+                    name: '自定义',
+                    tileSource: 'carto-light',
+                    mapFilter: 'none',
+                    posterBg: '#1a1d23',
+                    titleBarBg: '#111318',
+                    titleColor: '#ffffff',
+                    subtitleColor: '#8899aa',
+                    accentLine: '#5c9ce6',
+                    attributionColor: '#556677',
+                    desc: '自定义颜色和样式',
+                },
             };
 
-            // ==================== 离线城市坐标缓存 ====================
-            const DEFAULT_CITY_CACHE = {
-                '北京': { lat: 39.9042, lon: 116.4074, display: '北京 · Beijing' },
-                '上海': { lat: 31.2304, lon: 121.4737, display: '上海 · Shanghai' },
-                '广州': { lat: 23.1291, lon: 113.2644, display: '广州 · Guangzhou' },
-                '深圳': { lat: 22.5431, lon: 114.0579, display: '深圳 · Shenzhen' },
-                '杭州': { lat: 30.2741, lon: 120.1551, display: '杭州 · Hangzhou' },
-                '成都': { lat: 30.5728, lon: 104.0668, display: '成都 · Chengdu' },
-                '重庆': { lat: 29.4316, lon: 106.9123, display: '重庆 · Chongqing' },
-                '武汉': { lat: 30.5928, lon: 114.3055, display: '武汉 · Wuhan' },
-                '南京': { lat: 32.0603, lon: 118.7969, display: '南京 · Nanjing' },
-                '西安': { lat: 34.3416, lon: 108.9398, display: '西安 · Xi\'an' },
-                '天津': { lat: 39.3434, lon: 117.3616, display: '天津 · Tianjin' },
-                '苏州': { lat: 31.2990, lon: 120.5853, display: '苏州 · Suzhou' },
-                '长沙': { lat: 28.2282, lon: 112.9388, display: '长沙 · Changsha' },
-                '郑州': { lat: 34.7466, lon: 113.6253, display: '郑州 · Zhengzhou' },
-                '青岛': { lat: 36.0671, lon: 120.3826, display: '青岛 · Qingdao' },
-                '大连': { lat: 38.9140, lon: 121.6147, display: '大连 · Dalian' },
-                '厦门': { lat: 24.4798, lon: 118.0894, display: '厦门 · Xiamen' },
-                '昆明': { lat: 25.0389, lon: 102.7183, display: '昆明 · Kunming' },
-                '哈尔滨': { lat: 45.8038, lon: 126.5350, display: '哈尔滨 · Harbin' },
-                '沈阳': { lat: 41.8057, lon: 123.4315, display: '沈阳 · Shenyang' },
-                '台北': { lat: 25.0330, lon: 121.5654, display: '台北 · Taipei' },
-                '香港': { lat: 22.3193, lon: 114.1694, display: '香港 · Hong Kong' },
-                '澳门': { lat: 22.1987, lon: 113.5439, display: '澳门 · Macau' },
-                '拉萨': { lat: 29.6500, lon: 91.1000, display: '拉萨 · Lhasa' },
-                '乌鲁木齐': { lat: 43.8256, lon: 87.6168, display: '乌鲁木齐 · Ürümqi' },
-                '东京': { lat: 35.6762, lon: 139.6503, display: '东京 · Tokyo' },
-                '首尔': { lat: 37.5665, lon: 126.9780, display: '首尔 · Seoul' },
-                '曼谷': { lat: 13.7563, lon: 100.5018, display: '曼谷 · Bangkok' },
-                '新加坡': { lat: 1.3521, lon: 103.8198, display: '新加坡 · Singapore' },
-                '伦敦': { lat: 51.5074, lon: -0.1278, display: '伦敦 · London' },
-                '巴黎': { lat: 48.8566, lon: 2.3522, display: '巴黎 · Paris' },
-                '纽约': { lat: 40.7128, lon: -74.0060, display: '纽约 · New York' },
-                '旧金山': { lat: 37.7749, lon: -122.4194, display: '旧金山 · San Francisco' },
-                '悉尼': { lat: -33.8688, lon: 151.2093, display: '悉尼 · Sydney' },
-                '迪拜': { lat: 25.2048, lon: 55.2708, display: '迪拜 · Dubai' },
-                '莫斯科': { lat: 55.7558, lon: 37.6173, display: '莫斯科 · Moscow' },
-                '柏林': { lat: 52.5200, lon: 13.4050, display: '柏林 · Berlin' },
-                '罗马': { lat: 41.9028, lon: 12.4964, display: '罗马 · Rome' },
-                '马德里': { lat: 40.4168, lon: -3.7038, display: '马德里 · Madrid' },
-                '阿姆斯特丹': { lat: 52.3676, lon: 4.9041, display: '阿姆斯特丹 · Amsterdam' },
-                '伊斯坦布尔': { lat: 41.0082, lon: 28.9784, display: '伊斯坦布尔 · Istanbul' },
-                '多伦多': { lat: 43.6532, lon: -79.3832, display: '多伦多 · Toronto' },
-                '墨尔本': { lat: -37.8136, lon: 144.9631, display: '墨尔本 · Melbourne' },
-                '巴塞罗那': { lat: 41.3851, lon: 2.1734, display: '巴塞罗那 · Barcelona' },
-                '布拉格': { lat: 50.0755, lon: 14.4378, display: '布拉格 · Prague' },
-                '维也纳': { lat: 48.2082, lon: 16.3738, display: '维也纳 · Vienna' },
-                '布达佩斯': { lat: 47.4979, lon: 19.0402, display: '布达佩斯 · Budapest' },
-                '华沙': { lat: 52.2297, lon: 21.0122, display: '华沙 · Warsaw' },
-                '雅典': { lat: 37.9838, lon: 23.7275, display: '雅典 · Athens' },
-                '开罗': { lat: 30.0444, lon: 31.2357, display: '开罗 · Cairo' },
-                '里约热内卢': { lat: -22.9068, lon: -43.1729, display: '里约热内卢 · Rio de Janeiro' },
-            };
+            // ==================== 城市坐标缓存 ====================
+            let CITY_DB = {};
+
+            async function loadCityDB() {
+                try {
+                    const resp = await fetch(CONFIG.citiesUrl + '?t=' + Date.now());
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        CITY_DB = data;
+                        // 转成 geocode 格式：flat array → { lat, lon, display }
+                        STATE.cityCache = {};
+                        for (const [name, coords] of Object.entries(data)) {
+                            STATE.cityCache[name] = { lat: coords[1], lon: coords[0], display: name };
+                        }
+                        console.log('[CityDB] 已加载 ' + Object.keys(CITY_DB).length + ' 个城市');
+                    }
+                } catch (e) {
+                    console.warn('[CityDB] 加载失败:', e.message);
+                }
+            }
 
             // ==================== 全局状态 ====================
             const STATE = {
@@ -931,13 +917,13 @@
                 settingsPanel: $('#settingsPanel'),
                 settingsOverlay: $('#settingsOverlay'),
                 btnCloseSettings: $('#btnCloseSettings'),
-                proxyPrefix: $('#proxyPrefix'),
                 customTileUrl: $('#customTileUrl'),
+                tileSourceSelect: $('#tileSourceSelect'),
+                customTileInput: $('#customTileInput'),
                 exportDpi: $('#exportDpi'),
                 exportSize: $('#exportSize'),
                 titleFontSize: $('#titleFontSize'),
                 titleFontSizeVal: $('#titleFontSizeVal'),
-                offlineCityCache: $('#offlineCityCache'),
                 btnSaveSettings: $('#btnSaveSettings'),
                 statusDot: $('#statusDot'),
                 statusText: $('#statusText'),
@@ -993,17 +979,17 @@
 
             // 加载设置
             function loadSettings() {
-                CONFIG.proxyPrefix = safeLSGet('proxyPrefix', '');
+                CONFIG.tileSource = safeLSGet('tileSource', 'carto-light');
                 CONFIG.customTileUrl = safeLSGet('customTileUrl', '');
                 CONFIG.exportDpi = safeLSGet('exportDpi', 300);
                 CONFIG.exportSize = safeLSGet('exportSize', 'a3');
                 CONFIG.titleFontSizeMultiplier = safeLSGet('titleFontSizeMultiplier', 1.0);
-                STATE.cityCache = safeLSGet('cityCache', { ...DEFAULT_CITY_CACHE });
                 STATE.currentTheme = safeLSGet('theme', 'dark-minimal');
                 STATE.currentRadiusKm = safeLSGet('radiusKm', 6);
 
                 // 同步UI
-                dom.proxyPrefix.value = CONFIG.proxyPrefix;
+                dom.tileSourceSelect.value = CONFIG.tileSource;
+                dom.customTileInput.style.display = CONFIG.tileSource === 'custom' ? 'block' : 'none';
                 dom.customTileUrl.value = CONFIG.customTileUrl;
                 dom.exportDpi.value = String(CONFIG.exportDpi);
                 dom.exportSize.value = CONFIG.exportSize;
@@ -1012,11 +998,10 @@
                 dom.themeSelect.value = STATE.currentTheme;
                 dom.radiusSlider.value = STATE.currentRadiusKm;
                 dom.radiusVal.textContent = STATE.currentRadiusKm + 'km';
-                dom.offlineCityCache.value = JSON.stringify(STATE.cityCache, null, 2);
             }
 
             function saveSettings() {
-                CONFIG.proxyPrefix = dom.proxyPrefix.value.trim();
+                CONFIG.tileSource = dom.tileSourceSelect.value;
                 CONFIG.customTileUrl = dom.customTileUrl.value.trim();
                 CONFIG.exportDpi = parseInt(dom.exportDpi.value) || 300;
                 CONFIG.exportSize = dom.exportSize.value;
@@ -1026,24 +1011,13 @@
                 STATE.currentRadiusKm = parseFloat(dom.radiusSlider.value) || 6;
                 dom.radiusVal.textContent = STATE.currentRadiusKm + 'km';
 
-                // 尝试解析离线城市缓存
-                try {
-                    const parsed = JSON.parse(dom.offlineCityCache.value);
-                    if (typeof parsed === 'object' && parsed !== null) {
-                        STATE.cityCache = parsed;
-                    }
-                } catch (e) {
-                    // 保持旧缓存
-                }
-
-                safeLSSet('proxyPrefix', CONFIG.proxyPrefix);
+                safeLSSet('tileSource', CONFIG.tileSource);
                 safeLSSet('customTileUrl', CONFIG.customTileUrl);
                 safeLSSet('exportDpi', CONFIG.exportDpi);
                 safeLSSet('exportSize', CONFIG.exportSize);
                 safeLSSet('titleFontSizeMultiplier', CONFIG.titleFontSizeMultiplier);
                 safeLSSet('theme', STATE.currentTheme);
                 safeLSSet('radiusKm', STATE.currentRadiusKm);
-                safeLSSet('cityCache', STATE.cityCache);
                 showToast('✅ 设置已保存', 'success');
             }
 
@@ -1149,42 +1123,47 @@
             }
 
             async function geocodeOnline(query) {
-                const url = `${CONFIG.nominatimUrl}?q=${encodeURIComponent(query)}&format=json&limit=3&accept-language=zh`;
-                const fetchUrl = CONFIG.proxyPrefix ? CONFIG.proxyPrefix + encodeURIComponent(url) : url;
+                // 尝试多个来源：先试服务器代理，再试直接连
+                const urls = [
+                    CONFIG.geocodeUrl + '?q=' + encodeURIComponent(query) + '&format=json&limit=3&accept-language=zh',
+                    'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(query) + '&format=json&limit=3&accept-language=zh',
+                ];
 
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 8000);
+                for (const url of urls) {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 6000);
 
-                try {
-                    const resp = await fetch(fetchUrl, {
-                        signal: controller.signal,
-                        headers: {
-                            'Accept': 'application/json',
-                            'User-Agent': 'MapPosterGenerator/1.0 (MIT)',
-                        },
-                    });
-                    clearTimeout(timeout);
-                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                    const data = await resp.json();
-                    if (data && data.length > 0) {
-                        const best = data[0];
-                        const result = {
-                            lat: parseFloat(best.lat),
-                            lon: parseFloat(best.lon),
-                            display: best.display_name || query,
-                            matchedName: query,
-                        };
-                        // 缓存结果
-                        STATE.cityCache[query] = { lat: result.lat, lon: result.lon, display: result.display };
-                        safeLSSet('cityCache', STATE.cityCache);
-                        return result;
+                    try {
+                        const resp = await fetch(url, {
+                            signal: controller.signal,
+                            headers: url.startsWith('/') ? {} : {
+                                'Accept': 'application/json',
+                                'User-Agent': 'MapPoster/1.0',
+                            },
+                        });
+                        clearTimeout(timeout);
+                        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                        const data = await resp.json();
+                        if (data && data.length > 0) {
+                            const best = data[0];
+                            const result = {
+                                lat: parseFloat(best.lat),
+                                lon: parseFloat(best.lon),
+                                display: best.display_name || query,
+                                matchedName: query,
+                            };
+                            STATE.cityCache[query] = { lat: result.lat, lon: result.lon, display: result.display };
+                            try { safeLSSet('cityCache_extra', STATE.cityCache); } catch(e) {}
+                            return result;
+                        }
+                        return null;
+                    } catch (err) {
+                        clearTimeout(timeout);
+                        console.warn('[Geocode] 来源失败:', url.split('?')[0], err.message);
+                        continue;
                     }
-                    return null;
-                } catch (err) {
-                    clearTimeout(timeout);
-                    console.warn('[Geocode] 在线查询失败:', err.message);
-                    return null;
                 }
+                return null;
             }
 
             async function geocodeCity(query) {
@@ -1215,18 +1194,40 @@
 
             // ==================== 地图核心层 ====================
             function getTileUrl() {
-                if (CONFIG.customTileUrl && CONFIG.customTileUrl.includes('{z}')) {
-                    return CONFIG.customTileUrl;
+                if (CONFIG.tileSource === 'custom') {
+                    return CONFIG.customTileUrl.includes('{z}') ? CONFIG.customTileUrl : null;
                 }
-                const theme = THEMES[STATE.currentTheme] || THEMES['dark-minimal'];
-                switch (theme.tileSource) {
-                    case 'carto-light':
-                        return CONFIG.cartoLightUrl;
-                    case 'carto-dark':
-                        return CONFIG.cartoDarkUrl;
-                    default:
-                        return CONFIG.defaultTileUrl;
-                }
+                return CONFIG.tileSources[CONFIG.tileSource] || null;
+            }
+
+            function buildMapStyle(tileUrl, mapFilter, bgColor) {
+                if (!tileUrl) return null;
+                return {
+                    version: 8,
+                    sources: {
+                        'osm-raster': {
+                            type: 'raster',
+                            tiles: [tileUrl],
+                            tileSize: 256,
+                            attribution: '© OpenStreetMap | © CartoDB',
+                            maxzoom: 19,
+                        },
+                    },
+                    layers: [{
+                        id: 'osm-raster-layer',
+                        type: 'raster',
+                        source: 'osm-raster',
+                        paint: {
+                            'raster-opacity': 1,
+                            'raster-resampling': 'linear',
+                            'raster-contrast': mapFilter && mapFilter !== 'none' ? 0 : 0,
+                            'raster-saturation': mapFilter && mapFilter !== 'none' ? 0 : 0,
+                        },
+                    }],
+                    // CSS filter for the map canvas
+                    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+                    metadata: { 'mapfilter': mapFilter || '' },
+                };
             }
 
             function getMapStyle() {
@@ -1893,10 +1894,17 @@
             // ==================== 初始化 ====================
             async function initialize() {
                 console.log('[MapPoster] 初始化 v' + CONFIG.version + ' | MIT License');
-                console.log('[MapPoster] MapLibre GL version:', maplibregl.getVersion());
 
                 // 加载设置
                 loadSettings();
+
+                // 加载城市数据库
+                await loadCityDB();
+                // 合并 localStorage 中的额外缓存
+                try {
+                    const extra = safeLSGet('cityCache_extra', {});
+                    if (typeof extra === 'object') Object.assign(STATE.cityCache, extra);
+                } catch(e) {}
 
                 // 预加载字体（后台进行，不阻塞）
                 loadChineseFont().then((loaded) => {
@@ -1910,36 +1918,43 @@
                     return;
                 }
 
-                // 初始加载默认城市（北京）
-                const defaultCity = '北京';
+                // Tile source select 切换逻辑
+                dom.tileSourceSelect.addEventListener('change', function() {
+                    dom.customTileInput.style.display = this.value === 'custom' ? 'block' : 'none';
+                });
+
+                // 初始加载默认城市（天津 - 主人的城市）
+                const defaultCity = '天津';
                 dom.cityInput.value = defaultCity;
                 setStatus('loading', '正在初始化…');
                 await generateCityMap(defaultCity);
+
+                // 延迟3秒后隐藏提示
+                setTimeout(() => dom.mapHint.classList.add('hidden'), 3000);
 
                 console.log('[MapPoster] 初始化完成');
                 console.log('[MapPoster] 主题:', Object.keys(THEMES).length, '种可选');
                 console.log('[MapPoster] 离线缓存城市:', Object.keys(STATE.cityCache).length, '个');
                 console.log('[MapPoster] 快捷键: Ctrl+K 搜索 | Ctrl+E 导出 | Ctrl+, 设置');
+
+                // 流量统计
+                try {
+                    fetch('/api/stats/ping?tool=map-poster&v=' + CONFIG.version, { method: 'GET', mode: 'no-cors' });
+                } catch(e) {}
             }
 
             // 启动
             initialize().catch((err) => {
                 console.error('[MapPoster] 初始化失败:', err);
                 setStatus('error', '初始化失败: ' + err.message);
-                showToast('❌ 初始化失败，请刷新页面重试', 'error');
+                showToast('❌ 初始化失败，请检查网络后刷新重试', 'error');
             });
 
-            console.log(`
-        %c🗺️ Map Poster Generator %cv${CONFIG.version}
-        %cMIT License · 纯前端地图海报生成器
-        %c复刻MapToPoster | MapLibre GL + Canvas API
-        %c支持 ${Object.keys(THEMES).length} 种主题 · ${Object.keys(DEFAULT_CITY_CACHE).length}+ 离线城市
-            `,
+            console.log(`%c🗺️ 城市海报生成器 %cv${CONFIG.version}
+        %cMIT License · 纯前端 · © OpenStreetMap contributors`,
                 'font-size:1.2em;font-weight:bold;color:#5c9ce6;',
                 'font-size:0.9em;color:#aaa;',
-                'color:#5cb878;',
-                'color:#e0a855;',
-                'color:#8899aa;'
+                'color:#5cb878;'
             );
 
         })();
