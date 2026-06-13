@@ -775,8 +775,8 @@
                     'carto-dark': 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                     'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     'arcgis': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    'tdt-vec': 'https://t0.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=f16db1c361624a334721259322f7e79a',
-                    'tdt-img': 'https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=f16db1c361624a334721259322f7e79a',
+                    'tdt-vec': '/api/tdt/vec_w/{z}/{x}/{y}.png',
+                    'tdt-img': '/api/tdt/img_w/{z}/{x}/{y}.png',
                 },
                 tileSource: 'tdt-vec',
                 // 地理编码（走服务器代理）
