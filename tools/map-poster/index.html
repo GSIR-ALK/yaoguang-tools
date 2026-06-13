@@ -713,6 +713,8 @@
             <option value="carto-dark">Carto 暗色</option>
             <option value="osm">OpenStreetMap 标准</option>
             <option value="arcgis">ArcGIS 卫星混合</option>
+            <option value="tdt-vec">天地图 矢量街道</option>
+            <option value="tdt-img">天地图 卫星影像</option>
             <option value="custom">自定义 URL</option>
         </select>
         <div id="customTileInput" style="display:none;">
@@ -767,14 +769,16 @@
                 defaultZoom: 13,
                 minZoom: 8,
                 maxZoom: 18,
-                // 瓦片源（浏览器直连——国内用户需自行确保网络可达）
+                // 瓦片源
                 tileSources: {
                     'carto-light': 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
                     'carto-dark': 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                     'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     'arcgis': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    'tdt-vec': 'https://t0.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=f16db1c361624a334721259322f7e79a',
+                    'tdt-img': 'https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=f16db1c361624a334721259322f7e79a',
                 },
-                tileSource: 'osm',
+                tileSource: 'tdt-vec',
                 // 地理编码（走服务器代理）
                 geocodeUrl: '/api/geocode',
                 // 城市缓存
@@ -1002,7 +1006,7 @@
 
             // 加载设置
             function loadSettings() {
-                CONFIG.tileSource = safeLSGet('tileSource', 'osm');
+                CONFIG.tileSource = safeLSGet('tileSource', 'tdt-vec');
                 CONFIG.customTileUrl = safeLSGet('customTileUrl', '');
                 CONFIG.exportDpi = safeLSGet('exportDpi', 300);
                 CONFIG.exportSize = safeLSGet('exportSize', 'a3');
